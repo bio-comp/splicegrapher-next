@@ -65,6 +65,21 @@ python -m pip install -e .
 
 `uv` remains the preferred local development workflow in this repository.
 
+## Docker / Nextflow / BioContainers-Friendly Guidance
+
+This repository tracks container/workflow friendliness as a compatibility
+requirement during migration. Detailed contract and checklists live in
+`docs/workflow-integrations.md`.
+
+Quick container smoke command:
+
+```bash
+docker run --rm -v "$PWD":/work -w /work python:3.12-slim bash -lc '
+python -m pip install --upgrade pip &&
+python -m pip install . &&
+python -c "import importlib.metadata as md; print(md.version(\"splicegrapher-next\"))"'
+```
+
 ## Migration Status
 
 This project is in active extraction and stabilization.
