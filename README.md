@@ -75,14 +75,14 @@ cleanup or re-architecture.
 
 This repository is a continuation/derivative effort and may contain mixed
 provenance over time. Preserve original notices and license headers in copied
-files. See `LICENSE` and any future provenance/license inventory docs.
+files. See `LICENSE`, `NOTICE`, `PROVENANCE.md`, and `LICENSES/README.md`.
 
 ## Original SpliceGrapher References
 
 Rogers MF, Thomas J, Reddy AS, Ben-Hur A. SpliceGrapher: detecting patterns of
 alternative splicing from RNA-Seq data in the context of gene models and EST
 data. *Genome Biology*. 2012 Jan 31;13(1):R4. doi:10.1186/gb-2012-13-1-r4.
-PMID: 22293517; PMCID: PMC3334585.
+PMID: 22293517; PMCID: PMC3334585. <https://doi.org/10.1186/gb-2012-13-1-r4>
 
 Rogers MF, Boucher C, Ben-Hur A. SpliceGrapherXT: From Splice Graphs to
 Transcripts Using RNA-Seq. In: *Proceedings of the International Conference on

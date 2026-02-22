@@ -1,0 +1,20 @@
+NOTICE
+======
+
+Project: splicegrapher-next
+Repository: https://github.com/bio-comp/splicegrapher-next
+
+This project is an unofficial continuation/modernization bridge for
+SpliceGrapher, intended to support iDiffIR and TAPIS migration workflows.
+
+Attribution and provenance details are tracked in:
+- PROVENANCE.md
+- LICENSES/README.md
+
+Important:
+- Preserve existing copyright headers.
+- Preserve file-level notices from upstream/derived sources.
+- Do not assume a single license governs all future extracted files.
+
+This NOTICE is an engineering notice scaffold and should be updated as source
+files are extracted.
