@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "splicegrapher-next"
 version = "0.1.0a1"
-description = "Python 3 modernization / continuation of SpliceGrapher for shared iDiffIR and TAPIS use"
+description = "Python 3 modernization / continuation of SpliceGrapher for general use, with iDiffIR and TAPIS compatibility priorities"
 readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "Mixed licensing; see LICENSE and provenance notices." }
