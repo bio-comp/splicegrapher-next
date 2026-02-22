@@ -68,3 +68,50 @@ Validation run:
 - Populate this ledger when issue #6 extraction begins.
 - Add explicit source commit hashes for each copied batch.
 - Add file-level license inventory rows in `LICENSES/README.md`.
+
+## Extraction Ledger Entries
+
+### 2026-02-22 - Core/shared baseline extraction (issue #5)
+
+Date:
+
+- 2026-02-22
+
+Issue/PR:
+
+- Issue: #5
+- PR: (to be filled when opened)
+
+Source repository/path:
+
+- Repository: `bio-comp/iDiffIR`
+- Path: `iDiffIR/SpliceGrapher`
+
+Source commit/ref:
+
+- `e69b8ada59860d270f6cecb2468d5993a995fac8`
+
+Destination paths:
+
+- `SpliceGrapher/__init__.py`
+- `SpliceGrapher/SpliceGraph.py`
+- `SpliceGrapher/shared/__init__.py`
+- `SpliceGrapher/shared/utils.py`
+- `SpliceGrapher/shared/streams.py`
+- `tests/test_core_shared_import_smoke.py`
+
+License/notice files added or updated:
+
+- None in this extraction slice.
+
+Behavioral modifications from source baseline:
+
+- Updated internal import namespace from `iDiffIR.SpliceGrapher.*` to
+  `SpliceGrapher.*` for extracted modules.
+- Added import smoke tests for extracted core/shared modules.
+
+Validation run:
+
+- `uv run pytest tests/test_core_shared_import_smoke.py -q`
+- `uv run python -c "import SpliceGrapher, SpliceGrapher.SpliceGraph, SpliceGrapher.shared.utils, SpliceGrapher.shared.streams"`
+- `uv build`
