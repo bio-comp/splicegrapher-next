@@ -77,6 +77,13 @@ ignore = [
   "E402",
 ]
 
+[tool.ruff.lint.per-file-ignores]
+# Legacy extraction slices are landed with behavior-parity priority before
+# broad style normalization.
+"SpliceGrapher/SpliceGraph.py" = ["E", "F"]
+"SpliceGrapher/shared/streams.py" = ["E", "F"]
+"SpliceGrapher/shared/utils.py" = ["E", "F"]
+
 [tool.mypy]
 python_version = "3.10"
 ignore_missing_imports = true
