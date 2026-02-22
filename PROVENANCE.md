@@ -7,8 +7,8 @@ upstream/downstream integration work.
 ## Repository Identity
 
 - Repository: `bio-comp/splicegrapher-next`
-- Purpose: shared Python 3 modernization/continuation bridge for SpliceGrapher
-  used by iDiffIR and TAPIS
+- Purpose: generally usable Python 3 modernization/continuation of
+  SpliceGrapher, with compatibility priorities for iDiffIR and TAPIS
 - Import namespace compatibility target: `SpliceGrapher`
 
 ## Current Source Inventory (Phase: Scaffold)

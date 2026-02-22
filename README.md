@@ -1,7 +1,8 @@
 # splicegrapher-next
 
 `splicegrapher-next` is an unofficial Python 3 modernization/continuation of
-SpliceGrapher for shared use by iDiffIR and TAPIS during active migration.
+SpliceGrapher for general splice-graph and RNA-seq analysis workflows, with
+compatibility priorities for iDiffIR and TAPIS during active migration.
 
 - Repository/distribution name: `splicegrapher-next`
 - Python import namespace (compatibility): `SpliceGrapher`
@@ -9,8 +10,8 @@ SpliceGrapher for shared use by iDiffIR and TAPIS during active migration.
 ## Why This Repo Exists
 
 Historically, iDiffIR and TAPIS relied on divergent SpliceGrapher copies.
-This repository is the compatibility bridge that reduces duplication and
-centralizes migration work while preserving behavior and imports.
+This repository reduces duplication, centralizes migration work, and provides
+a generally usable Python 3 continuation while preserving behavior and imports.
 
 ## Phase 1 Scope
 
@@ -19,7 +20,7 @@ Goals:
 - Extract and stabilize modernized SpliceGrapher components from iDiffIR.
 - Preserve `SpliceGrapher` import compatibility where practical.
 - Keep visualization (`view/`, `plot/`) as first-class functionality.
-- Enable incremental external adoption by iDiffIR and TAPIS.
+- Enable incremental external adoption by iDiffIR, TAPIS, and other users.
 
 Non-goals:
 
