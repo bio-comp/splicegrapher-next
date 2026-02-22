@@ -81,7 +81,11 @@ ignore = [
 # Legacy extraction slices are landed with behavior-parity priority before
 # broad style normalization.
 "SpliceGrapher/SpliceGraph.py" = ["E", "F"]
+"SpliceGrapher/formats/GeneModel.py" = ["E", "F", "W"]
+"SpliceGrapher/formats/alignment_io.py" = ["E", "F", "W"]
+"SpliceGrapher/formats/fasta.py" = ["E", "F", "W"]
 "SpliceGrapher/shared/streams.py" = ["E", "F"]
+"SpliceGrapher/shared/ShortRead.py" = ["E", "F", "W"]
 "SpliceGrapher/shared/utils.py" = ["E", "F"]
 
 [tool.mypy]
