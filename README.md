@@ -53,6 +53,35 @@ python -m pip install -e .
 uv run python -c "import SpliceGrapher; print(SpliceGrapher.__name__)"
 ```
 
+## Configuration (Canonical TOML + Env Overrides)
+
+`splicegrapher-next` now supports a canonical TOML configuration file validated
+through `pydantic-settings`:
+
+```toml
+[splicegrapher]
+gene_model = "/absolute/path/to/genes.gtf"
+fasta_reference = "/absolute/path/to/reference.fa"
+```
+
+Use `splicegrapher.toml.example` as a starting point.
+
+Configuration loading is TOML-only and intentionally does not support legacy
+`.cfg` files.
+
+Environment variables can override nested TOML values using:
+
+- prefix: `SGN_`
+- nested delimiter: `__`
+
+Example override for orchestration layers (Nextflow/Docker env injection):
+
+```bash
+export SGN_SPLICEGRAPHER__GENE_MODEL=/mnt/data/genes.gtf
+```
+
+Detailed loader behavior and API examples are in `docs/configuration.md`.
+
 ## Conda / Mamba / Miniconda / Bioconda-Friendly Guidance
 
 Use conda-based environments when needed for scientific stacks:
