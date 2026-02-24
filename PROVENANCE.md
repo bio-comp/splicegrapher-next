@@ -11,10 +11,15 @@ upstream/downstream integration work.
   SpliceGrapher, with compatibility priorities for iDiffIR and TAPIS
 - Import namespace compatibility target: `SpliceGrapher`
 
-## Current Source Inventory (Phase: Scaffold)
+## Current Source Inventory (Phase: Active Extraction)
 
-This repository currently contains bootstrap packaging and documentation assets.
-No large SpliceGrapher source-module extraction is recorded yet in this file.
+Current tracked extraction baseline includes:
+
+- Identity/package artifacts: `SpliceGrapher/__init__.py`
+- Core/shared baseline: `SpliceGrapher/SpliceGraph.py`,
+  `SpliceGrapher/shared/*`
+- Formats slice A baseline: `SpliceGrapher/formats/*` (current extracted files)
+- Residual batch-0 identity completion: `SpliceGrapher/SpliceGrapher.cfg`
 
 ## Upstream and Derived Sources
 
@@ -65,7 +70,6 @@ Validation run:
 
 ## Initial Follow-Up Items
 
-- Populate this ledger when issue #6 extraction begins.
 - Add explicit source commit hashes for each copied batch.
 - Add file-level license inventory rows in `LICENSES/README.md`.
 
@@ -114,4 +118,41 @@ Validation run:
 
 - `uv run pytest tests/test_core_shared_import_smoke.py -q`
 - `uv run python -c "import SpliceGrapher, SpliceGrapher.SpliceGraph, SpliceGrapher.shared.utils, SpliceGrapher.shared.streams"`
+- `uv build`
+
+### 2026-02-24 - Residual identity cfg extraction (issue #6)
+
+Date:
+
+- 2026-02-24
+
+Issue/PR:
+
+- Issue: #6
+- PR: (to be filled when opened)
+
+Source repository/path:
+
+- Repository: `bio-comp/iDiffIR`
+- Path: `iDiffIR/SpliceGrapher/SpliceGrapher.cfg`
+
+Source commit/ref:
+
+- `e69b8ada59860d270f6cecb2468d5993a995fac8`
+
+Destination paths:
+
+- `SpliceGrapher/SpliceGrapher.cfg`
+
+License/notice files added or updated:
+
+- None in this extraction slice.
+
+Behavioral modifications from source baseline:
+
+- None. File copied as-is to complete batch-0 identity compatibility artifact.
+
+Validation run:
+
+- `uv run python -c "import SpliceGrapher"`
 - `uv build`
