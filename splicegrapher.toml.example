@@ -1,0 +1,4 @@
+[splicegrapher]
+# Canonical modern configuration for splicegrapher-next.
+gene_model = "/absolute/path/to/genes.gtf"
+fasta_reference = "/absolute/path/to/reference.fa"
