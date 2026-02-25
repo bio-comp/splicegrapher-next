@@ -56,6 +56,10 @@ dev = [
   "pytest-cov>=5.0",
   "ruff>=0.6.0",
   "mypy>=1.10",
+  "nbclient>=0.10.4",
+  "nbformat>=5.10.4",
+  "nbconvert>=7.17.0",
+  "ipykernel>=7.2.0",
 ]
 
 [tool.hatch.build.targets.wheel]

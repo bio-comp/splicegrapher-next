@@ -1,0 +1,36 @@
+name: notebook-smoke
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/notebook-smoke.yml"
+      - "docs/notebooks/**"
+      - "docs/tutorials/**"
+      - "tests/test_notebook_smoke.py"
+      - "pyproject.toml"
+      - "uv.lock"
+  workflow_dispatch:
+
+jobs:
+  notebook-smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Install dependencies
+        run: uv sync --group dev
+
+      - name: Register python kernel
+        run: uv run python -m ipykernel install --user --name python3 --display-name "Python 3"
+
+      - name: Execute notebook smoke tests
+        run: uv run pytest tests/test_notebook_smoke.py -q
