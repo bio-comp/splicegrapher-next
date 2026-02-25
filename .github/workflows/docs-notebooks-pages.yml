@@ -1,0 +1,88 @@
+name: docs-notebooks-pages
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/docs-notebooks-pages.yml"
+      - "docs/notebooks/**"
+      - "docs/tutorials/**"
+      - "pyproject.toml"
+      - "uv.lock"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Install dependencies
+        run: uv sync --group dev
+
+      - name: Register python kernel
+        run: uv run python -m ipykernel install --user --name python3 --display-name "Python 3"
+
+      - name: Render notebooks
+        run: |
+          mkdir -p site/notebooks
+          uv run jupyter nbconvert --to html --execute docs/notebooks/01_legacy_tutorial_foundation.ipynb --output 01_legacy_tutorial_foundation.html --output-dir site/notebooks
+          uv run jupyter nbconvert --to html --execute docs/notebooks/02_modern_dataset_track.ipynb --output 02_modern_dataset_track.html --output-dir site/notebooks
+
+      - name: Build docs index
+        run: |
+          cat > site/index.html <<'EOF'
+          <!doctype html>
+          <html lang="en">
+          <head>
+            <meta charset="utf-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1">
+            <title>splicegrapher-next Tutorials</title>
+          </head>
+          <body>
+            <h1>splicegrapher-next Tutorial Notebooks</h1>
+            <ul>
+              <li><a href="notebooks/01_legacy_tutorial_foundation.html">Legacy Tutorial Foundation</a></li>
+              <li><a href="notebooks/02_modern_dataset_track.html">Modern Dataset Track</a></li>
+            </ul>
+          </body>
+          </html>
+          EOF
+
+      - name: Upload pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    permissions:
+      pages: write
+      id-token: write
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

@@ -48,9 +48,11 @@ Planned script contract:
 ```bash
 uv run python scripts/data/fetch_tutorial_data.py \
   --manifest docs/tutorials/dataset_manifest.toml \
-  --species plant \
+  --species ath \
   --method python-httpx
 ```
+
+Use `--species hsa` for the human canonical pair.
 
 ### SRA Toolkit Method (Alternative)
 

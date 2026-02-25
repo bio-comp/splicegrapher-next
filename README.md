@@ -118,6 +118,21 @@ in:
 - `docs/tutorials/dataset_manifest.toml`
 - `docs/tutorials/datasets.md`
 
+## Jupyter Tutorial Notebooks
+
+Notebook tutorials and execution notes are in:
+
+- `docs/notebooks/README.md`
+- `docs/notebooks/01_legacy_tutorial_foundation.ipynb`
+- `docs/notebooks/02_modern_dataset_track.ipynb`
+
+Quick local smoke execution:
+
+```bash
+uv sync --group dev
+uv run pytest tests/test_notebook_smoke.py -q
+```
+
 ## Migration Status
 
 This project is in active extraction and stabilization.
