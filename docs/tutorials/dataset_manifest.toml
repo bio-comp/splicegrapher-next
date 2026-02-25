@@ -1,0 +1,64 @@
+[manifest]
+schema_version = 1
+last_reviewed = "2026-02-25"
+tracking_issue = 29
+primary_acquisition = "python-httpx"
+supported_acquisition = ["python-httpx", "sra-toolkit"]
+selection_policy = "biologically-contrasted-pair"
+tier_policy = "canonical-study-fetch-for-notebooks plus tiny-derived-fixtures-for-ci"
+
+[species.ath]
+key = "ath"
+name = "Arabidopsis thaliana"
+taxon_id = 3702
+study_accession = "PRJNA755474"
+study_source = "INSDC BioProject"
+focus = "Alternative splicing and transcript reference updates (AtRTD3)"
+reference_genome = "TAIR10"
+reference_annotation = "AtRTD3 + Araport11 context"
+run_accessions = ["SRR17001820", "SRR17001821"]
+
+[species.ath.run_metadata.SRR17001820]
+label = "WT_BA1"
+platform = "ILLUMINA"
+library_layout = "PAIRED"
+group = "control_like"
+
+[species.ath.run_metadata.SRR17001821]
+label = "lrp2_BA1"
+platform = "ILLUMINA"
+library_layout = "PAIRED"
+group = "perturbed_like"
+
+[species.hsa]
+key = "hsa"
+name = "Homo sapiens"
+taxon_id = 9606
+study_accession = "GSE172421"
+study_source = "GEO Series (short/long-read DTU benchmark context)"
+focus = "Differential transcript usage benchmark with short-read support"
+reference_genome = "GRCh38"
+reference_annotation = "GENCODE/Ensembl-compatible transcript annotation"
+run_accessions = ["SRR14684074", "SRR14684079"]
+
+[species.hsa.run_metadata.SRR14684074]
+label = "human_pair_A"
+platform = "ILLUMINA"
+library_layout = "PAIRED"
+group = "control_like"
+
+[species.hsa.run_metadata.SRR14684079]
+label = "human_pair_B"
+platform = "ILLUMINA"
+library_layout = "PAIRED"
+group = "perturbed_like"
+
+[checksums]
+# Filled after fixture construction in follow-up notebook/e2e implementation.
+canonical_metadata_lock_sha256 = "TBD"
+fixture_bundle_sha256 = "TBD"
+
+[citations]
+plant_primary = "Zhang R, Calixto CPG, Marquez Y, et al. A high quality Arabidopsis transcriptome for accurate transcript-level analysis of alternative splicing. Genome Biol. 2022;23(1):211. doi:10.1186/s13059-022-02711-0"
+human_primary = "Glinos DA, Garborcauskas G, Hoffman P, et al. Transcriptome variation in human tissues revealed by long-read sequencing. Nature. 2022;608(7922):353-359. doi:10.1038/s41586-022-05035-y"
+human_benchmark = "Sahlin K, Limasset A, Lu S, et al. Benchmarking differential transcript usage and differential expression analysis tools for short- and long-read RNA-seq data. Nat Methods. 2023;20:1206-1216. doi:10.1038/s41592-023-02026-3"

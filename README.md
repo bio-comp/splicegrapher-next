@@ -110,6 +110,14 @@ python -m pip install . &&
 python -c "import importlib.metadata as md; print(md.version(\"splicegrapher-next\"))"'
 ```
 
+## Tutorial Dataset Curation
+
+Canonical modern tutorial/e2e dataset selections (plant + human) are tracked
+in:
+
+- `docs/tutorials/dataset_manifest.toml`
+- `docs/tutorials/datasets.md`
+
 ## Migration Status
 
 This project is in active extraction and stabilization.
