@@ -41,13 +41,16 @@ def _register_kernel_once() -> None:
     _ensure_python3_kernel()
 
 
-def _execute_notebook(path: Path) -> nbformat.NotebookNode:
+def _execute_notebook(
+    path: Path,
+    execution_cwd: Path = REPO_ROOT,
+) -> nbformat.NotebookNode:
     notebook = nbformat.read(path, as_version=4)
     client = NotebookClient(
         notebook,
         timeout=120,
         kernel_name="python3",
-        resources={"metadata": {"path": str(REPO_ROOT)}},
+        resources={"metadata": {"path": str(execution_cwd)}},
     )
     return client.execute()
 
@@ -74,3 +77,13 @@ def test_tutorial_notebook_executes(notebook_path: Path) -> None:
     output_blob = _text_outputs(executed)
     assert "ath" in output_blob
     assert "hsa" in output_blob
+
+
+@pytest.mark.integration
+def test_notebook_executes_from_notebook_directory_cwd() -> None:
+    executed = _execute_notebook(
+        NOTEBOOK_PATHS[0],
+        execution_cwd=REPO_ROOT / "docs" / "notebooks",
+    )
+    output_blob = _text_outputs(executed)
+    assert "PRJNA755474" in output_blob
