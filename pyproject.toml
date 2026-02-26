@@ -60,6 +60,8 @@ dev = [
   "nbformat>=5.10.4",
   "nbconvert>=7.17.0",
   "ipykernel>=7.2.0",
+  "jupyter-book==1.0.0",
+  "pydata-sphinx-theme>=0.14",
 ]
 
 [tool.hatch.build.targets.wheel]
