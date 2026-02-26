@@ -28,3 +28,12 @@ uv run jupyter lab
 - PR smoke execution is handled by `.github/workflows/notebook-smoke.yml`.
 - GitHub Pages rendering/deploy is handled by
   `.github/workflows/docs-notebooks-pages.yml`.
+- The Pages visual shell (landing page + notebook dark mode toggle/theme) is
+  built by `docs/site/build_pages_site.py`.
+
+Local Pages preview:
+
+```bash
+uv run python docs/site/build_pages_site.py
+python -m http.server --directory site 8000
+```
