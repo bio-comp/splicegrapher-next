@@ -7,6 +7,7 @@ on:
     paths:
       - ".github/workflows/docs-notebooks-pages.yml"
       - "docs/notebooks/**"
+      - "docs/site/**"
       - "docs/tutorials/**"
       - "pyproject.toml"
       - "uv.lock"
@@ -42,31 +43,8 @@ jobs:
       - name: Register python kernel
         run: uv run python -m ipykernel install --user --name python3 --display-name "Python 3"
 
-      - name: Render notebooks
-        run: |
-          mkdir -p site/notebooks
-          uv run jupyter nbconvert --to html --execute docs/notebooks/01_legacy_tutorial_foundation.ipynb --output 01_legacy_tutorial_foundation.html --output-dir site/notebooks
-          uv run jupyter nbconvert --to html --execute docs/notebooks/02_modern_dataset_track.ipynb --output 02_modern_dataset_track.html --output-dir site/notebooks
-
-      - name: Build docs index
-        run: |
-          cat > site/index.html <<'EOF'
-          <!doctype html>
-          <html lang="en">
-          <head>
-            <meta charset="utf-8">
-            <meta name="viewport" content="width=device-width, initial-scale=1">
-            <title>splicegrapher-next Tutorials</title>
-          </head>
-          <body>
-            <h1>splicegrapher-next Tutorial Notebooks</h1>
-            <ul>
-              <li><a href="notebooks/01_legacy_tutorial_foundation.html">Legacy Tutorial Foundation</a></li>
-              <li><a href="notebooks/02_modern_dataset_track.html">Modern Dataset Track</a></li>
-            </ul>
-          </body>
-          </html>
-          EOF
+      - name: Build themed docs site
+        run: uv run python docs/site/build_pages_site.py
 
       - name: Upload pages artifact
         uses: actions/upload-pages-artifact@v3
