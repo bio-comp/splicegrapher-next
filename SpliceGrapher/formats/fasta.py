@@ -27,7 +27,7 @@ with changes by Asa Ben-Hur and Mark Rogers
 
 import os
 
-from SpliceGrapher.shared.utils import ezopen
+from SpliceGrapher.shared.file_utils import ezopen
 
 
 class MalformedInput:

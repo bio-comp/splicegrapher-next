@@ -93,7 +93,6 @@ ignore = [
 "SpliceGrapher/formats/fasta.py" = ["E", "F", "W"]
 "SpliceGrapher/shared/streams.py" = ["E", "F"]
 "SpliceGrapher/shared/ShortRead.py" = ["E", "F", "W"]
-"SpliceGrapher/shared/utils.py" = ["E", "F"]
 
 [tool.mypy]
 python_version = "3.10"
