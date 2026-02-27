@@ -13,8 +13,12 @@ Attribution and provenance details are tracked in:
 - LICENSES/README.md
 
 Important:
-- Preserve existing copyright headers.
-- Preserve file-level notices from upstream/derived sources.
+- Licensing and attribution are managed at the project level via `LICENSE`,
+  `NOTICE`, `PROVENANCE.md`, and `LICENSES/`.
+- Redundant per-file legacy license header comment blocks may be removed as
+  part of tracked cleanup issues.
+- If a source requires file-level notices, retain them and document the
+  exception in `PROVENANCE.md`.
 - Do not assume a single license governs all future extracted files.
 
 This NOTICE is an engineering notice scaffold and should be updated as source

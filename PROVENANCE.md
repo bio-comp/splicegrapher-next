@@ -39,17 +39,22 @@ Planned/known source relationships:
 ## Licensing Notes (Non-Legal Summary)
 
 - Top-level license currently present in this repository: `LICENSE`.
-- Vendored iDiffIR SpliceGrapher tree includes additional file-level licensing
-  context that must be preserved during extraction.
+- Licensing/provenance source of truth is centralized in project-level docs:
+  `LICENSE`, `NOTICE`, `PROVENANCE.md`, and `LICENSES/`.
+- Vendored iDiffIR SpliceGrapher tree includes mixed licensing provenance;
+  required notices must remain discoverable through project inventory docs.
 - Do not treat this file as legal advice; it is an engineering traceability
   record.
 
-## Attribution and Header Preservation Rules
+## Attribution and Notice Handling Rules
 
-When copying files into this repository:
+When copying or normalizing files in this repository:
 
-- Preserve original copyright headers.
-- Preserve file-level notices and author attributions.
+- Preserve attribution and provenance through project-level inventories.
+- Remove redundant per-file legacy license header blocks in tracked cleanup
+  issues when legally safe.
+- Preserve file-level notices when explicitly required by source licensing
+  terms, and document those exceptions here.
 - Record source path, commit/ref, and destination path in this file.
 - Document any intentional modifications from the copied baseline.
 
@@ -155,4 +160,53 @@ Behavioral modifications from source baseline:
 Validation run:
 
 - `uv run python -c "import SpliceGrapher"`
+- `uv build`
+
+### 2026-02-27 - License-header normalization tranche A (issue #34)
+
+Date:
+
+- 2026-02-27
+
+Issue/PR:
+
+- Issue: #34
+- PR: (to be filled when opened)
+
+Source repository/path:
+
+- Repository: `bio-comp/splicegrapher-next`
+- Paths:
+  - `SpliceGrapher/SpliceGraph.py`
+  - `SpliceGrapher/shared/streams.py`
+  - `SpliceGrapher/shared/ShortRead.py`
+  - `SpliceGrapher/formats/fasta.py`
+  - `SpliceGrapher/formats/GeneModel.py`
+  - `SpliceGrapher/formats/loader.py`
+  - `SpliceGrapher/formats/alignment_io.py`
+
+Source commit/ref:
+
+- `c1ea06b1a8f7fdb5f0bff8984180ef6672a8ea30`
+
+Destination paths:
+
+- same as source paths above (in-place normalization)
+
+License/notice files added or updated:
+
+- `NOTICE`
+- `PROVENANCE.md`
+
+Behavioral modifications from source baseline:
+
+- None. Removed redundant top-of-file legacy license header comment blocks.
+- Standardized repository policy to project-level licensing/provenance
+  inventory docs with exception handling for required file-level notices.
+
+Validation run:
+
+- `uv run ruff check . --fix`
+- `uv run ruff format .`
+- `uv run pytest`
 - `uv build`
