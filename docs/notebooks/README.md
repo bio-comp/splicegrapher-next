@@ -5,7 +5,8 @@ This directory contains executable tutorial notebooks for `splicegrapher-next`.
 Current tracks:
 
 - `01_legacy_tutorial_foundation.ipynb`
-  - legacy tutorial framing with SGN modern manifest integration
+  - paper-lineage tutorial framing based on original SpliceGrapher workflow,
+    with SGN modern manifest integration
 - `02_modern_dataset_track.ipynb`
   - modern plant/human curated dataset contract checks
 
