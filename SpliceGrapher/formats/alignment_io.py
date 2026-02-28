@@ -3,14 +3,19 @@
 import io
 import os
 import re
-import sys
-from pathlib import Path
 from sys import maxsize as MAXINT
 
 import pysam
+import structlog
 
-from SpliceGrapher.shared.ShortRead import *
+from SpliceGrapher.shared.ShortRead import (
+    SpliceJunction,
+    isDepthsFile,
+    readDepths,
+)
 from SpliceGrapher.shared.utils import ProgressIndicator, ezopen, getAttribute
+
+LOGGER = structlog.get_logger(__name__)
 
 # Header tags
 HEADER_HD_TAG = "HD"
@@ -27,12 +32,14 @@ HEADER_SQ_LINE = "@SQ"
 # 1       FLAG  -- bitwise FLAG (Sam spec., section 2.2.2)
 # 2       RNAME -- Reference sequence NAME 3
 # 3       POS   -- 1-based leftmost POSition/coordinate of the clipped sequence
-# 4       MAPQ  -- MAPping Quality (phred-scaled posterior probability that the mapping position of this read is incorrect)
+# 4       MAPQ  -- MAPping Quality (phred-scaled posterior probability that the
+#                  mapping position of this read is incorrect)
 # 5       CIGAR -- extended CIGAR string
 # 6       MRNM  -- Mate Reference sequence NaMe
 # 7       MPOS  -- 1-based leftmost Mate POSition of the clipped sequence
 # 8       ISIZE -- inferred Insert SIZE
-# 9       SEQ   -- query SEQuence; = for match to the reference; n/N/. for ambiguity; cases are not maintained
+# 9       SEQ   -- query SEQuence; = for match to the reference; n/N/. for
+#                  ambiguity; cases are not maintained
 # 10      QUAL  -- query QUALity; ASCII-33 gives the Phred base quality
 # 11-??   Optional TAG:VTYPE:VALUE triplets
 #
@@ -44,7 +51,8 @@ HEADER_SQ_LINE = "@SQ"
 # B -- Integer or numeric array
 VALID_VTYPES = ["A", "i", "f", "Z", "H", "B"]
 
-ALL_COLUMNS = [QNAME, FLAG, RNAME, POS, MAPQ, CIGAR, MRNM, MPOS, ISIZE, SEQ, QUAL, TAGS] = range(12)
+QNAME, FLAG, RNAME, POS, MAPQ, CIGAR, MRNM, MPOS, ISIZE, SEQ, QUAL, TAGS = range(12)
+ALL_COLUMNS = [QNAME, FLAG, RNAME, POS, MAPQ, CIGAR, MRNM, MPOS, ISIZE, SEQ, QUAL, TAGS]
 REQUIRED_COLUMNS = ALL_COLUMNS[:-1]
 INT_COLUMNS = [FLAG, POS, MPOS, MAPQ]
 
@@ -98,14 +106,14 @@ class ChromosomeTracker(object):
         self.finished = {}
 
     def allFinished(self, cSet):
-        """Returns true if all chromosomes in the given set or list are finished; false otherwise."""
+        """Return True if all chromosomes in the given set/list are finished."""
         for c in cSet:
             if not self.isFinished(c):
                 return False
         return True
 
     def isFinished(self, c):
-        """Returns true if the given chromosome has already been seen; false otherwise."""
+        """Return True if the given chromosome has already been seen."""
         try:
             return self.finished[c.lower()]
         except KeyError:
@@ -157,7 +165,8 @@ def _open_alignment_file(path, **args):
         except ValueError as exc:
             if "reference" in str(exc).lower():
                 raise ValueError(
-                    "Unable to decode CRAM without reference. Re-run with reference_fasta=<path-to-fasta>."
+                    "Unable to decode CRAM without reference. "
+                    "Re-run with reference_fasta=<path-to-fasta>."
                 ) from exc
             raise
     return pysam.AlignmentFile(path, "r")
@@ -335,7 +344,10 @@ def _collect_pysam_data(path, **args):
                     strand = rec.get_tag(STRAND_TAG)
                 else:
                     strand = "-" if rec.is_reverse else "+"
-                jct_code = rec.get_tag(JCT_CODE_TAG) if rec.has_tag(JCT_CODE_TAG) else ""
+                if rec.has_tag(JCT_CODE_TAG):
+                    jct_code = rec.get_tag(JCT_CODE_TAG)
+                else:
+                    jct_code = ""
                 jct_list = _build_splice_junctions(
                     chrom,
                     start_pos,
@@ -390,8 +402,7 @@ def acceptSAMRecord(s, counter, **args):
     try:
         rec = AlignmentRecord(s)
     except ValueError as ve:
-        sys.stderr.write("\n*** Error in SAM file at line %d ***\n" % counter)
-        sys.stderr.write("Line: %s\n" % s)
+        LOGGER.error("invalid_sam_record", line_number=counter, line=s)
         raise ve
 
     if rec.attrs[RNAME] == NULL_CHROMOSOME:
@@ -466,7 +477,7 @@ def convertCigarString(tokens, requiredSize):
         try:
             # Tokens must be an integer followed by a single character
             size = int(curr[:-1])
-        except ValueError as ve:
+        except ValueError:
             raise ValueError('Unrecognized CIGAR string: "%s"' % curr)
 
         if symbol == "M":
@@ -521,17 +532,19 @@ def pysamAttributesToStrings(pysamAttributes):
     canonical SAM attribute string."""
     result = []
     for name, value in pysamAttributes:
-        if type(value) == int:
-            newString = "%s:i:%d" % (name, value)
-        elif type(value) == float:
-            newString = "%s:i:%f" % (name, value)
-        elif type(value) == list:
-            newString = "%s:B:%s" % (name, value)
-        elif type(value) == chr:
-            newString = "%s:A:%c" % (name, value)
-        elif type(value) == str:
-            newString = "%s:Z:%s" % (name, value)
-        result.append(newString)
+        if type(value) is int:
+            new_string = "%s:i:%d" % (name, value)
+        elif type(value) is float:
+            new_string = "%s:i:%f" % (name, value)
+        elif type(value) is list:
+            new_string = "%s:B:%s" % (name, value)
+        elif type(value) is chr:
+            new_string = "%s:A:%c" % (name, value)
+        elif type(value) is str:
+            new_string = "%s:Z:%s" % (name, value)
+        else:
+            continue
+        result.append(new_string)
     return result
 
 
@@ -655,8 +668,11 @@ def pysamReadDepths(bamFile, chromosome, gene, **args):
                 result[i] += 1
 
     if verbose:
-        sys.stderr.write(
-            "Loaded %d ungapped and %d spliced reads for %s\n" % (nUngapped, nSpliced, gene.id)
+        LOGGER.info(
+            "pysam_read_depths_loaded",
+            ungapped_reads=nUngapped,
+            spliced_reads=nSpliced,
+            gene_id=gene.id,
         )
     return loBound, result
 
@@ -789,8 +805,11 @@ def getSamAlignments(samRecords, **args):
                 code = m[-1]
                 delta = int(m[:-1])
             except Exception as e:
-                sys.stderr.write("\n*** Error in SAM file at line %d ***\n" % indicator.ctr)
-                sys.stderr.write("Line: %s\n" % line)
+                LOGGER.error(
+                    "sam_parse_error",
+                    line_number=indicator.ctr,
+                    line=line,
+                )
                 raise e
 
             # Update reads for matches only
@@ -811,9 +830,10 @@ def getSamDepths(samRecords, **args):
     chromosomes = getAttribute("chromosomes", None, **args)
     chromSet = makeChromosomeSet(chromosomes)
 
-    if _is_alignment_path(samRecords) and (
+    is_native_alignment = (
         isBamFile(samRecords) or isCramFile(samRecords) or samRecords.lower().endswith(".sam")
-    ):
+    )
+    if _is_alignment_path(samRecords) and is_native_alignment:
         depths, _ = _collect_pysam_data(samRecords, junctions=False, **args)
         return depths
 
@@ -824,7 +844,7 @@ def getSamDepths(samRecords, **args):
     depths = {}
     limit = {}
     if verbose and maxpos < MAXINT:
-        sys.stderr.write("Loading SAM records up to position %d\n" % maxpos)
+        LOGGER.info("loading_sam_records", max_position=maxpos)
     indicator = ProgressIndicator(1000000, verbose=verbose)
 
     tracker = ChromosomeTracker()
@@ -852,7 +872,7 @@ def getSamDepths(samRecords, **args):
 
         if c not in limit:
             limit[c] = 0
-        if not c in depths:
+        if c not in depths:
             depths[c] = [0] * (maxpos + 1) if maxpos < MAXINT else [0]
 
         prvPos = rec.attrs[POS]
@@ -864,8 +884,11 @@ def getSamDepths(samRecords, **args):
                 code = m[-1]
                 delta = int(m[:-1])
             except Exception as e:
-                sys.stderr.write("\n*** Error in SAM file at line %d ***\n" % indicator.ctr)
-                sys.stderr.write("Line: %s\n" % line)
+                LOGGER.error(
+                    "sam_parse_error",
+                    line_number=indicator.ctr,
+                    line=line,
+                )
                 raise e
             curPos = prvPos + delta
 
@@ -893,8 +916,11 @@ def getSamDepths(samRecords, **args):
 
     if verbose:
         loaded = total - omitted
-        sys.stderr.write(
-            "Loaded %d records, omitted %d out of %d total\n" % (loaded, omitted, total)
+        LOGGER.info(
+            "sam_depths_loaded",
+            loaded_records=loaded,
+            omitted_records=omitted,
+            total_records=total,
         )
 
     return depths
@@ -939,8 +965,8 @@ def getSamHeaderInfo(samStream, **args):
             seedLine = line
             break
     if verbose:
-        sys.stderr.write("Found %d chromosomes in SAM header:\n" % len(result))
-        sys.stderr.write("  %s\n" % ",".join(sorted(result)))
+        LOGGER.info("sam_header_chromosome_count", chromosome_count=len(result))
+        LOGGER.info("sam_header_chromosomes", chromosomes=",".join(sorted(result)))
     return result, seedLine
 
 
@@ -954,9 +980,10 @@ def getSamJunctions(samRecords, **args):
     minjct = getAttribute("minjct", 1, **args)
     chromosomes = getAttribute("chromosomes", None, **args)
 
-    if _is_alignment_path(samRecords) and (
+    is_native_alignment = (
         isBamFile(samRecords) or isCramFile(samRecords) or samRecords.lower().endswith(".sam")
-    ):
+    )
+    if _is_alignment_path(samRecords) and is_native_alignment:
         _, junctions = _collect_pysam_data(samRecords, **args)
         return junctions
 
@@ -968,9 +995,10 @@ def getSamJunctions(samRecords, **args):
     chromSet = makeChromosomeSet(chromosomes)
 
     if verbose:
-        sys.stderr.write(
-            "Loading splice junctions with minimum anchor %d and minimum junction support %d\n"
-            % (minanchor, minjct)
+        LOGGER.info(
+            "loading_splice_junctions",
+            min_anchor=minanchor,
+            min_junction_support=minjct,
         )
 
     indicator = ProgressIndicator(1000000, verbose=verbose)
@@ -1044,9 +1072,10 @@ def getSamReadData(samRecords, **args):
     minjct = getAttribute("minjct", 1, **args)
     verbose = getAttribute("verbose", False, **args)
 
-    if _is_alignment_path(samRecords) and (
+    is_native_alignment = (
         isBamFile(samRecords) or isCramFile(samRecords) or samRecords.lower().endswith(".sam")
-    ):
+    )
+    if _is_alignment_path(samRecords) and is_native_alignment:
         return _collect_pysam_data(samRecords, **args)
 
     if isDepthsFile(samRecords):
@@ -1059,10 +1088,11 @@ def getSamReadData(samRecords, **args):
     limit = {}
     if verbose:
         if maxpos < MAXINT:
-            sys.stderr.write("   loading SAM records for positions up to %d\n" % maxpos)
-        sys.stderr.write(
-            "   splice junctions with minimum anchor %d and minimum junction support %d\n"
-            % (minanchor, minjct)
+            LOGGER.info("loading_sam_records", max_position=maxpos)
+        LOGGER.info(
+            "loading_splice_junctions",
+            min_anchor=minanchor,
+            min_junction_support=minjct,
         )
 
     indicator = ProgressIndicator(1000000, verbose=verbose)
@@ -1085,13 +1115,13 @@ def getSamReadData(samRecords, **args):
             if c not in chromSet:
                 continue
 
-        if not c in depths:
+        if c not in depths:
             depths[c] = [0] * (maxpos + 1) if maxpos < MAXINT else [0]
 
         if c not in limit:
             limit[c] = 0
 
-        if alignments and not c in align:
+        if alignments and c not in align:
             align[c] = []
 
         prvPos = rec.attrs[POS]
@@ -1103,12 +1133,12 @@ def getSamReadData(samRecords, **args):
                 code = m[-1]
                 delta = int(m[:-1])
             except Exception as e:
-                sys.stderr.write(
-                    "\n*** Error in SAM file: invalid CIGAR string (column 5) at line %d ***\n"
-                    % indicator.ctr
+                LOGGER.error(
+                    "invalid_cigar_string",
+                    line_number=indicator.ctr,
+                    record=line,
+                    cigar=rec.cigar(),
                 )
-                sys.stderr.write("Invalid record: %s\n" % line)
-                sys.stderr.write("CIGAR string:   %s\n" % rec.cigar())
                 raise e
 
             curPos = prvPos + delta
@@ -1137,9 +1167,9 @@ def getSamReadData(samRecords, **args):
                 continue
 
             strand = rec.attrs[STRAND_TAG]
-            if not c in jctTmp:
+            if c not in jctTmp:
                 jctTmp[c] = {}
-            if not strand in jctTmp[c]:
+            if strand not in jctTmp[c]:
                 jctTmp[c][strand] = {}
             for newJct in jctList:
                 jctTmp[c][strand].setdefault(newJct.p1, {})
@@ -1198,7 +1228,6 @@ def isBamFile(filePath):
 
 def loadSAMRecords(f):
     """Loads SAM records from a file and returns them in a list."""
-    hstring = None
     result = []
     for s in ezopen(f):
         if not s.startswith("@"):
@@ -1210,7 +1239,7 @@ def makeChromosomeSet(chromList):
     """Converts a string or a list of chromosomes into a set of unique values."""
     chromSet = None
     if chromList:
-        if type(chromList) == type(" "):
+        if isinstance(chromList, str):
             chromList = [chromList]
         chromSet = set([c.lower() for c in chromList])
     return chromSet
@@ -1275,7 +1304,7 @@ def samIterator(path, isBam=False, **args):
 
 
 def validCigarString(s):
-    """Returns true if the given CIGAR string is one that we can use; false otherwise."""
+    """Return True when the given CIGAR string is usable."""
     if s == NULL_CIGAR:
         return False
     elif s == EXACT_CIGAR:
@@ -1300,7 +1329,7 @@ class AlignmentRecord(object):
                 else:
                     self.attrs[col] = parts[col]
                     self.vtypes[col] = "A"
-            except IndexError as ie:
+            except IndexError:
                 raise ValueError(
                     "Too few columns (%d<%d) in input record:\n%s"
                     % (len(parts), len(REQUIRED_COLUMNS), s)
@@ -1318,8 +1347,8 @@ class AlignmentRecord(object):
                     self.attrs[tag] = val
                 except ValueError:
                     raise ValueError(
-                        'Illegal tag:type:value SAM attribute "%s"; record contains %d columns'
-                        % (triplet, len(parts))
+                        'Illegal tag:type:value SAM attribute "%s"; '
+                        "record contains %d columns" % (triplet, len(parts))
                     )
             col += 1
 
@@ -1344,7 +1373,7 @@ class AlignmentRecord(object):
         return self.attrs[FLAG]
 
     def __getitem__(self, key):
-        if not key in self.vtypes:
+        if key not in self.vtypes:
             return self.attrs[key]
         elif self.vtypes[key] in ["A", "Z"]:
             return self.attrs[key]
@@ -1387,7 +1416,7 @@ class AlignmentRecord(object):
         self.setAttribute(valueString.split(":"))
 
     def setAttribute(self, values):
-        """Sets an attribute based on [key, type, value] values using SAM key:type:value format."""
+        """Set an attribute from [key, type, value] SAM key:type:value tokens."""
         if type(values) not in [set, list]:
             raise ValueError("Value must be a set or a list; received %s" % type(values))
         if not (2 <= len(values) <= 3):
