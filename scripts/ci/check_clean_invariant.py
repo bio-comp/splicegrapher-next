@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import subprocess
 import sys
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 try:
     import tomllib
@@ -22,6 +22,18 @@ BASELINE_PER_FILE_IGNORES: dict[str, set[str]] = {
 
 # Real script entry points can be added here explicitly as needed.
 EXECUTABLE_PYTHON_ALLOWLIST: set[str] = set()
+
+# New per-file ignores are only allowed for explicit non-production carve-outs.
+ALLOWED_NEW_IGNORE_TARGETS: tuple[str, ...] = (
+    "SpliceGrapher/shims/**/*.py",
+    "tests/**/*.py",
+    "docs/notebooks/*.ipynb",
+)
+
+
+def _is_allowed_new_ignore_target(path: str) -> bool:
+    pure_path = PurePosixPath(path)
+    return any(pure_path.match(pattern) for pattern in ALLOWED_NEW_IGNORE_TARGETS)
 
 
 def load_per_file_ignores(pyproject_path: Path) -> dict[str, set[str]]:
@@ -44,8 +56,11 @@ def detect_ignore_growth(
 
     for path in sorted(current):
         if path not in baseline:
+            if _is_allowed_new_ignore_target(path):
+                continue
             violations.append(
-                f"New per-file ignore target introduced: {path} -> {sorted(current[path])}"
+                "New per-file ignore target introduced outside allowed carve-outs: "
+                f"{path} -> {sorted(current[path])}"
             )
             continue
 
