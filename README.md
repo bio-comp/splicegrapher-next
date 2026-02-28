@@ -138,6 +138,11 @@ uv run pytest tests/test_notebook_smoke.py -q
 This project is in active extraction and stabilization.
 Current priority is compatibility, correctness, and tests before deeper
 cleanup or re-architecture.
+Clean-invariant ratchet policy is enforced by
+`scripts/ci/check_clean_invariant.py`:
+- Ruff per-file-ignore debt may decrease, but may not grow.
+- Executable bits are disallowed on library Python modules unless explicitly
+  allowlisted as true scripts/entrypoints.
 
 ## License and Provenance
 
