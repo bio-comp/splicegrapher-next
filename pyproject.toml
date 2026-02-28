@@ -98,9 +98,6 @@ ignore = [
 # broad style normalization.
 "SpliceGrapher/SpliceGraph.py" = ["E", "F"]
 "SpliceGrapher/formats/GeneModel.py" = ["E", "F", "W"]
-# Migration-time operational carve-outs:
-"docs/notebooks/*.ipynb" = ["T201"]
-"scripts/ci/check_clean_invariant.py" = ["T201"]
 
 [tool.mypy]
 python_version = "3.10"

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import subprocess
+import sys
 from pathlib import Path
 
 try:
@@ -108,19 +109,21 @@ def main() -> int:
     )
 
     if ignore_violations:
-        print("Clean-invariant ratchet failure: per-file-ignore debt grew.")
+        sys.stdout.write("Clean-invariant ratchet failure: per-file-ignore debt grew.\n")
         for violation in ignore_violations:
-            print(f"- {violation}")
+            sys.stdout.write(f"- {violation}\n")
 
     if executable_violations:
-        print("Clean-invariant failure: unexpected executable Python modules detected.")
+        sys.stdout.write(
+            "Clean-invariant failure: unexpected executable Python modules detected.\n"
+        )
         for path in executable_violations:
-            print(f"- {path}")
+            sys.stdout.write(f"- {path}\n")
 
     if ignore_violations or executable_violations:
         return 1
 
-    print("Clean-invariant checks passed.")
+    sys.stdout.write("Clean-invariant checks passed.\n")
     return 0
 
 
