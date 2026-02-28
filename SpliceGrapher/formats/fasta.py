@@ -160,9 +160,9 @@ class fasta_slice(object):
         self.__itr = _fasta_itr(src)
         self.__first = first
         self.__last = last
-        if type(first) == int:
+        if isinstance(first, int):
             self.__current = 0
-        elif type(first) == type(""):
+        elif isinstance(first, str):
             self.__current = None
         else:
             raise ValueError("bad first")
@@ -177,7 +177,7 @@ class fasta_slice(object):
     def __next__(self):
         if not self.__foundFirst:
             for rec in self.__itr:
-                if type(self.__first) == int:
+                if isinstance(self.__first, int):
                     if self.__first == self.__current:
                         self.__foundFirst = True
                         break
@@ -193,7 +193,7 @@ class fasta_slice(object):
         rec = next(self.__itr)
 
         if self.__last is not None:
-            if type(self.__first) == int:
+            if isinstance(self.__first, int):
                 self.__current += 1
                 if self.__current == self.__last:
                     raise StopIteration
