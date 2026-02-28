@@ -41,6 +41,26 @@ cd splicegrapher-next
 uv sync --group dev
 ```
 
+### Local Git Hook Gates (pre-commit)
+
+Install local hooks:
+
+```bash
+uv run pre-commit install --hook-type pre-commit --hook-type pre-push
+```
+
+Manual hook runs:
+
+```bash
+uv run pre-commit run --all-files
+uv run pre-commit run --hook-stage pre-push --all-files
+```
+
+Hook coverage:
+
+- pre-commit stage: Ruff check/format + clean-invariant ratchet
+- pre-push stage: pytest + `uv build`
+
 ### Editable pip Fallback
 
 ```bash
