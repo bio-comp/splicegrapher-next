@@ -22,10 +22,10 @@ class NotebookTarget:
 NOTEBOOK_TARGETS: tuple[NotebookTarget, ...] = (
     NotebookTarget(
         notebook_path="docs/notebooks/01_legacy_tutorial_foundation.ipynb",
-        title="Legacy Tutorial Foundation",
+        title="Paper-Lineage Tutorial Foundation",
         summary=(
-            "Core SGN tutorial flow grounded in the original SpliceGrapher "
-            "workflow, updated for Python 3 execution."
+            "Core SGN tutorial flow grounded in the published/original "
+            "SpliceGrapher tutorial workflow, updated for Python 3 execution."
         ),
     ),
     NotebookTarget(
