@@ -1,99 +1,143 @@
-"""
-A parser for FASTA files.
-"""
+"""A parser for FASTA files."""
+
+from __future__ import annotations
 
 import os
+import random
+import sys
+from os import PathLike
+from pathlib import Path
+from typing import IO, Iterator
+
+from pyfaidx import Fasta
 
 from SpliceGrapher.shared.file_utils import ezopen
 
 
-class MalformedInput:
-    "Exception raised when the input file does not look like a fasta file."
+class MalformedInput(Exception):
+    """Exception raised when the input file does not look like a FASTA file."""
 
-    def __init__(self, value):
+    def __init__(self, value: str):
         self.param = value
+        super().__init__(value)
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return repr(self.param)
 
 
 class FastaRecord:
-    "a fasta record."
+    """A FASTA record."""
 
-    def __eq__(self, other):
-        return self.header == other.header and self.sequence == other.sequence
-
-    def __init__(self, header, sequence):
-        "Create a record with the given header and sequence."
+    def __init__(self, header: str, sequence: str):
+        """Create a record with the given header and sequence."""
         self.header = header
         self.sequence = sequence
 
-    def __str__(self):
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, FastaRecord):
+            return False
+        return self.header == other.header and self.sequence == other.sequence
+
+    def __str__(self) -> str:
         return ">" + self.header + "\n" + self.sequence + "\n"
 
 
-def _fasta_itr_from_file(file):
-    "Provide an iteration through the fasta records in file."
-    h = file.readline().strip()
-    if h[0] != ">":
-        raise MalformedInput("First header in FASTA file must start with '>' (found %s)" % h)
-    h = h[1:]
+def _to_text(line: str | bytes) -> str:
+    if isinstance(line, bytes):
+        return line.decode("utf-8")
+    return line
 
-    seq = []
-    linectr = 0
-    for line in file:
-        linectr += 1
-        line = line.strip()
-        if len(line) < 1:
-            raise MalformedInput("Blank line in FASTA file (line %d)" % linectr)
 
-        if line[0] == ">":
-            yield FastaRecord(h, "".join(seq))
-            h = line[1:]
-            seq = []
+def _fasta_itr_from_file(file_handle: IO[str] | IO[bytes]) -> Iterator[FastaRecord]:
+    """Provide an iteration through FASTA records in an open file handle."""
+    first_line = file_handle.readline()
+    if not first_line:
+        raise MalformedInput("FASTA file is empty")
+
+    header = _to_text(first_line).strip()
+    if not header.startswith(">"):
+        raise MalformedInput(f"First header in FASTA file must start with '>' (found {header})")
+    header = header[1:]
+
+    sequence_chunks: list[str] = []
+    line_number = 1
+    for raw_line in file_handle:
+        line_number += 1
+        line = _to_text(raw_line).strip()
+        if not line:
+            raise MalformedInput(f"Blank line in FASTA file (line {line_number})")
+
+        if line.startswith(">"):
+            yield FastaRecord(header, "".join(sequence_chunks))
+            header = line[1:]
+            sequence_chunks = []
             continue
-        seq.append(line)
-    yield FastaRecord(h, "".join(seq))
+        sequence_chunks.append(line)
+
+    yield FastaRecord(header, "".join(sequence_chunks))
 
 
-def _fasta_itr_from_name(fname):
-    "Provide an iteration through the fasta records in the file named fname."
-    f = ezopen(fname)
-    for rec in _fasta_itr_from_file(f):
-        yield rec
+def _fasta_itr_from_pyfaidx(path: Path) -> Iterator[FastaRecord]:
+    """Provide an iteration through FASTA records using pyfaidx."""
+    try:
+        fasta_file = Fasta(
+            str(path), as_raw=True, read_long_names=True, sequence_always_upper=False
+        )
+    except Exception as exc:  # pragma: no cover - raised via tests for malformed files
+        raise MalformedInput(str(exc)) from exc
+
+    try:
+        for header in fasta_file.keys():
+            yield FastaRecord(header, str(fasta_file[header]))
+    except Exception as exc:
+        raise MalformedInput(str(exc)) from exc
+    finally:
+        fasta_file.close()
 
 
-def _fasta_itr(src):
-    """Provide an iteration through the fasta records in file `src'.
+def _fasta_itr_from_name(fname: str) -> Iterator[FastaRecord]:
+    """Provide an iteration through FASTA records in a file path."""
+    path = Path(fname)
+    if path.suffix.lower() in {".gz", ".bgz"}:
+        handle = ezopen(fname)
+        try:
+            yield from _fasta_itr_from_file(handle)
+        finally:
+            handle.close()
+        return
 
-    Here `src' can be either a file object or the name of a file.
-    """
-    if type(src) == str:
-        return _fasta_itr_from_name(src)
-    elif type(src) == file:
+    yield from _fasta_itr_from_pyfaidx(path)
+
+
+def _fasta_itr(src: str | PathLike[str] | IO[str] | IO[bytes]) -> Iterator[FastaRecord]:
+    """Provide an iterator over FASTA records from paths or open file handles."""
+    if isinstance(src, (str, PathLike)):
+        return _fasta_itr_from_name(os.fspath(src))
+    if hasattr(src, "read"):
         return _fasta_itr_from_file(src)
-    else:
-        raise TypeError
+    raise TypeError(f"Unsupported FASTA source type: {type(src)!r}")
 
 
-def fasta_get_by_name(itr, name, byLength=False):
-    "Return the record in itr with the given name."
-    x = name.strip()
-    n = len(x)
+def fasta_get_by_name(
+    itr: Iterator[FastaRecord], name: str, byLength: bool = False
+) -> FastaRecord | None:
+    """Return the record in itr with the given name."""
+    target = name.strip()
+    target_len = len(target)
     for rec in itr:
-        s = rec.header.strip()
-        if byLength and n < len(s):
-            s = s[:n]
-        if s == x:
+        current = rec.header.strip()
+        if byLength and target_len < len(current):
+            current = current[:target_len]
+        if current == target:
             return rec
     return None
 
 
 class fasta_itr(object):
-    "An iterator through a sequence of fasta records."
+    """An iterator through a sequence of FASTA records."""
 
-    def __init__(self, src):
-        "Create an iterator through the records in src."
+    def __init__(self, src: str | PathLike[str] | IO[str] | IO[bytes]):
+        """Create an iterator through the records in src."""
         self.__itr = _fasta_itr(src)
 
     def __iter__(self):
@@ -110,18 +154,9 @@ class fasta_itr(object):
 
 
 class fasta_slice(object):
-    """Provide an iteration through the fasta records in 'src', from
-    'start' to 'stop'.
-    """
+    """Provide an iterator through FASTA records between first and last bounds."""
 
     def __init__(self, src, first, last=None):
-        """
-        :Parameters:
-        - `src` - the fasta file/file handle. file can be gzipped.
-        - `first` - the first record (either its index in the file or
-          its identifier
-        - `last` - the last record to be output (index in the file or identifier)
-        """
         self.__itr = _fasta_itr(src)
         self.__first = first
         self.__last = last
@@ -140,9 +175,6 @@ class fasta_slice(object):
         return self
 
     def __next__(self):
-        """
-        Implementation of the iterator interface.
-        """
         if not self.__foundFirst:
             for rec in self.__itr:
                 if type(self.__first) == int:
@@ -178,40 +210,29 @@ class fasta_slice(object):
         return fasta_get_by_name(iter(self), name)
 
     def save(self, fileName):
-        outfile = open(fileName, "w")
-        for record in self:
-            outfile.write(str(record))
+        with open(fileName, "w", encoding="utf-8") as outfile:
+            for record in self:
+                outfile.write(str(record))
 
 
 def get_sequence(src, name):
-    "Return the record in src with the given name."
+    """Return the record in src with the given name."""
     return fasta_itr(src)[name]
 
 
 def fasta_count(src):
-    """
-    count the number of records in a fasta file
-    """
-    return sum([1 for rec in fasta_itr(src)])
+    """Count the number of records in a FASTA source."""
+    return sum(1 for _rec in fasta_itr(src))
 
 
 def fasta_split(fileName, num_files, directory=None):
-    """
-    split a fasta file into a given number of files
-    the resulting files are named by adding a number
-    to the provided file name.
-
-    :Parameters:
-    - `fileName` - the fasta file to split
-    - `num_files` - the number of files to split into
-    - `directory` - the directory into which to write the files
-    """
+    """Split a FASTA file into a given number of output files."""
     num_records = fasta_count(fileName)
 
     if directory is None:
         base, ext = os.path.splitext(fileName)
     else:
-        dir, name = os.path.split(fileName)
+        _dir, name = os.path.split(fileName)
         base, ext = os.path.splitext(name)
         base = os.path.join(directory, base)
 
@@ -219,39 +240,32 @@ def fasta_split(fileName, num_files, directory=None):
     file_num = 0
     recs_per_file = float(num_records) / float(num_files)
     rec_limit = 0
+    outfile = None
 
     for rec in fasta_itr(fileName):
         if rec_num > round(rec_limit):
+            if outfile is not None:
+                outfile.close()
             file_num += 1
-            outfile = open(base + "." + str(file_num) + ext, "w")
+            outfile = open(base + "." + str(file_num) + ext, "w", encoding="utf-8")
             rec_limit += recs_per_file
         outfile.write(str(rec))
         rec_num += 1
 
-    ## assert(num_files == file_num)
+    if outfile is not None:
+        outfile.close()
 
 
 class FastaRandomizer(object):
-    """
-    Class that loads all FASTA sequences in a file and then returns
-    random subsets of the sequences.
-    """
+    """Load all FASTA sequences and return random subsets."""
 
     def __init__(self, fastaFile):
         self.records = [rec for rec in fasta_itr(fastaFile)]
         self.recRange = range(len(self.records))
 
     def randomRecords(self, n):
-        """
-        Returns a list of records from the file in random order.
-        Raises a ValueError exception if the number requested is
-        greater than the number stored.
-        """
         if n > len(self.records):
             raise ValueError("%d FASTA records requested; only %d stored." % (n, len(self.records)))
-
-        import random
-
         idList = random.sample(self.recRange, n)
         return [self.records[i] for i in idList]
 
@@ -260,9 +274,7 @@ class FastaRandomizer(object):
 
 
 def truncateSequences(fastaFile, exonSize, intronSize, acceptor=False, outFile=None, verbose=False):
-    """
-    Method that truncates FASTA sequences based on given intron and exon sizes.
-    """
+    """Truncate FASTA sequences based on given intron and exon sizes."""
     if verbose:
         sys.stderr.write("Loading sequences from %s\n" % fastaFile)
     fiter = fasta_itr(fastaFile)
@@ -271,12 +283,20 @@ def truncateSequences(fastaFile, exonSize, intronSize, acceptor=False, outFile=N
     if outFile:
         if verbose:
             sys.stderr.write("Writing output to %s\n" % outFile)
-        outStream = file(outFile, "w")
+        outStream = open(outFile, "w", encoding="utf-8")
 
-    for rec in fiter:
-        midpt = len(rec.sequence) / 2
-        if acceptor:
-            newRec = FastaRecord(rec.header, rec.sequence[midpt - intronSize : midpt + exonSize])
-        else:
-            newRec = FastaRecord(rec.header, rec.sequence[midpt - exonSize : midpt + intronSize])
-        outStream.write(str(newRec))
+    try:
+        for rec in fiter:
+            midpt = len(rec.sequence) // 2
+            if acceptor:
+                newRec = FastaRecord(
+                    rec.header, rec.sequence[midpt - intronSize : midpt + exonSize]
+                )
+            else:
+                newRec = FastaRecord(
+                    rec.header, rec.sequence[midpt - exonSize : midpt + intronSize]
+                )
+            outStream.write(str(newRec))
+    finally:
+        if outFile:
+            outStream.close()
