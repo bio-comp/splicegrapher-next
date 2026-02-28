@@ -82,17 +82,25 @@ target-version = "py310"
 line-length = 100
 
 [tool.ruff.lint]
-select = ["E", "F", "I", "W"]
+select = ["E", "F", "I", "W", "T20", "TID"]
 ignore = [
   # Legacy cleanup is incremental during migration.
   "E402",
 ]
+
+[tool.ruff.lint.flake8-tidy-imports.banned-api]
+"logging".msg = "Use structlog for SGN logging."
+"loguru".msg = "Use structlog for SGN logging."
+"requests".msg = "Use httpx (async-first) for outbound HTTP."
 
 [tool.ruff.lint.per-file-ignores]
 # Legacy extraction slices are landed with behavior-parity priority before
 # broad style normalization.
 "SpliceGrapher/SpliceGraph.py" = ["E", "F"]
 "SpliceGrapher/formats/GeneModel.py" = ["E", "F", "W"]
+# Migration-time operational carve-outs:
+"docs/notebooks/*.ipynb" = ["T201"]
+"scripts/ci/check_clean_invariant.py" = ["T201"]
 
 [tool.mypy]
 python_version = "3.10"
