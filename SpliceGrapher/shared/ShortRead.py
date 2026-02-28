@@ -2,11 +2,11 @@
 Module containing classes and methods for handling short-read data.
 """
 
-import sys
+import os
 from sys import maxsize as MAXINT
 
-from SpliceGrapher.formats.fasta import *
-from SpliceGrapher.shared.utils import ProgressIndicator, commaFormat, getAttribute, idFactory
+from SpliceGrapher.shared.file_utils import ezopen
+from SpliceGrapher.shared.utils import ProgressIndicator, getAttribute, idFactory
 
 #################################################
 #  Constants
@@ -27,21 +27,21 @@ def depthsHeader(path):
     """Returns the header (chromosome) information from a
     SpliceGrapher depths file.  Note that the chromosome
     information must all come at the start of a file."""
-    inStream = ezopen(path)
     result = {}
     ctr = 0
-    for line in inStream:
-        ctr += 1
-        s = line.strip()
-        parts = s.split("\t")
-        if parts[0] == CHROM_CODE:
-            if len(parts) != 3:
-                raise ValueError(
-                    "** %s has invalid chromosome record at line %d:\n%s\n" % (path, ctr, s)
-                )
-            result[parts[1]] = int(parts[2])
-        else:
-            break
+    with ezopen(path) as inStream:
+        for line in inStream:
+            ctr += 1
+            s = line.strip()
+            parts = s.split("\t")
+            if parts[0] == CHROM_CODE:
+                if len(parts) != 3:
+                    raise ValueError(
+                        "** %s has invalid chromosome record at line %d:\n%s\n" % (path, ctr, s)
+                    )
+                result[parts[1]] = int(parts[2])
+            else:
+                break
     return result
 
 
@@ -58,8 +58,6 @@ def depthsToClusters(chromosome, depths, **args):
     maxpos = getAttribute("maxpos", MAXINT, **args)
     reference = getAttribute("reference", 0, **args)
     threshold = getAttribute("threshold", 1, **args)
-    verbose = getAttribute("verbose", False, **args)
-
     result = []
     current = None
     maxpos = min(len(depths), maxpos)
@@ -89,19 +87,21 @@ def depthsToClusters(chromosome, depths, **args):
 
 def isDepthsFile(f):
     """Returns True if a file is a SpliceGrapher depths file; False otherwise."""
-    if type(f) == str:
-        if not os.path.isfile(f):
+    if isinstance(f, (str, os.PathLike)):
+        path = os.fspath(f)
+        if not os.path.isfile(path):
             return False
-        inStream = ezopen(f)
-        firstLine = inStream.readline()
-        inStream.close()
-    elif type(f) == file:
-        inStream = f
-        firstLine = inStream.readline()
-        f.seek(0)
+        with ezopen(path) as inStream:
+            firstLine = inStream.readline()
+    elif hasattr(f, "read"):
+        firstLine = f.readline()
+        if hasattr(f, "seek"):
+            f.seek(0)
     else:
         return False
 
+    if isinstance(firstLine, bytes):
+        firstLine = firstLine.decode("utf-8")
     parts = firstLine.strip().split("\t")
     return parts and parts[0] in DEPTH_CODES
 
@@ -213,10 +213,12 @@ def writeDepths(ostr, depthDict, jctDict={}, verbose=False):
     must provide an output destination (file path or writeable stream),
     and read depths stored as a dictionary of chromosome ids mapped
     to lists of integer values."""
-    if type(ostr) == file:
+    if isinstance(ostr, (str, os.PathLike)):
+        outStream = open(os.fspath(ostr), "w", encoding="utf-8")
+        closeStream = True
+    elif hasattr(ostr, "write"):
         outStream = ostr
-    elif type(ostr) == str:
-        outStream = open(ostr, "w")
+        closeStream = False
     else:
         raise ValueError("Unrecognized file type: %s" % type(ostr))
 
@@ -254,6 +256,8 @@ def writeDepths(ostr, depthDict, jctDict={}, verbose=False):
             indicator.update()
             outStream.write("%s\n" % j.toString())
     indicator.finish()
+    if closeStream:
+        outStream.close()
 
 
 #################################################
@@ -499,7 +503,7 @@ class SpliceJunction(Read):
         )
 
     def update(self, o):
-        """Updates read count and anchor information using the given SplicedRead or SpliceJunction record."""
+        """Update read count and anchors using a SplicedRead or SpliceJunction."""
         if (
             o.chromosome != self.chromosome
             or o.strand != self.strand
@@ -518,7 +522,8 @@ class SpliceJunction(Read):
             self.anchors[1] = max(self.anchors[1], o.anchors[1])
         else:
             raise ValueError(
-                "Attempted to update junction with object that was not a SplicedRead or SpliceJunction"
+                "Attempted to update junction with object that was not a "
+                "SplicedRead or SpliceJunction"
             )
 
 
