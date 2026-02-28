@@ -94,7 +94,6 @@ ignore = [
 "SpliceGrapher/formats/GeneModel.py" = ["E", "F", "W"]
 "SpliceGrapher/formats/alignment_io.py" = ["E", "F", "W"]
 "SpliceGrapher/formats/fasta.py" = ["E", "F", "W"]
-"SpliceGrapher/shared/streams.py" = ["E", "F"]
 "SpliceGrapher/shared/ShortRead.py" = ["E", "F", "W"]
 
 [tool.mypy]
