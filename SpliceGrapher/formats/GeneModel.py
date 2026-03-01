@@ -271,13 +271,14 @@ class BaseFeature(object):
         """
         return self.start() - 2 if self.strand == "+" else self.start()
 
-    def __cmp__(self, other):
-        if self.chromosome != other.chromosome:
-            return 2 * (self.chromosome > other.chromosome) - 1
-        elif self.minpos == other.minpos:
-            return self.maxpos - other.maxpos
-        else:
-            return self.minpos - other.minpos
+    def __lt__(self, other: object) -> bool:
+        if not isinstance(other, BaseFeature):
+            return NotImplemented
+        return (self.chromosome, self.minpos, self.maxpos) < (
+            other.chromosome,
+            other.minpos,
+            other.maxpos,
+        )
 
     def contains(self, pos, strand):
         return strand == self.strand and self.minpos <= pos <= self.maxpos
@@ -412,18 +413,18 @@ class Isoform(BaseFeature):
         self.exons.sort(key=featureSortKey, reverse=(self.strand == "-"))
         return [e.acceptor() for e in self.exons[1:]]
 
-    def addExon(self, exon):
+    def addExon(self, exon: Exon) -> bool:
         """
         Adds an exon to the isoform if it's unique.
         Returns True if the exon was added; false otherwise.
         """
         if exon.strand != self.strand:
-            raise Exception(
+            raise ValueError(
                 "Exon strand '%s' does not match isoform strand '%s' for %s"
                 % (exon.strand, self.strand, self.id)
             )
         if exon.chromosome != self.chromosome:
-            raise Exception(
+            raise ValueError(
                 "Exon chromosome '%s' does not match isoform chromosome '%s' for %s"
                 % (exon.chromosome, self.chromosome, self.id)
             )
@@ -440,15 +441,15 @@ class Isoform(BaseFeature):
         self.maxpos = max(self.maxpos, exon.maxpos)
         return True
 
-    def addFeature(self, feature):
+    def addFeature(self, feature: BaseFeature) -> None:
         if feature.strand != self.strand:
-            raise Exception(
+            raise ValueError(
                 "ERROR: feature strand '%s' does not match form strand '%s'"
                 % (feature.strand, self.strand)
             )
 
         if feature.chromosome != self.chromosome:
-            raise Exception(
+            raise ValueError(
                 "ERROR: feature chromosome '%s' does not match form chromosome '%s'"
                 % (feature.chromosome, self.chromosome)
             )
@@ -546,12 +547,16 @@ class CDS(Exon):
         BaseFeature.__init__(self, RecordType.CDS, start, end, chromosome, strand, attr)
         self.parents = []
 
-    def __cmp__(self, o):
+    def __lt__(self, other: object) -> bool:
         """Compare CDS records, including feature type for tied intervals."""
-        result = BaseFeature.__cmp__(self, o)
-        if result != 0:
-            return result
-        return (self.featureType > o.featureType) - (self.featureType < o.featureType)
+        if not isinstance(other, BaseFeature):
+            return NotImplemented
+        return (self.chromosome, self.minpos, self.maxpos, self.featureType) < (
+            other.chromosome,
+            other.minpos,
+            other.maxpos,
+            other.featureType,
+        )
 
     def __eq__(self, o):
         """Compare CDS equality by type and genomic location."""
@@ -606,17 +611,17 @@ class mRNA(Isoform):
         self.cds.sort(key=featureSortKey, reverse=(self.strand == "-"))
         return [c.acceptor() for c in self.cds[1:]]
 
-    def addCDS(self, cds):
+    def addCDS(self, cds: CDS) -> bool:
         """
         Adds a CDS to the mRNA if it's unique.
         Returns True if the CDS was added; false otherwise.
         """
         if cds.strand != self.strand:
-            raise Exception(
+            raise ValueError(
                 "ERROR: CDS strand '%s' does not match gene strand '%s'" % (cds.strand, self.strand)
             )
         if cds.chromosome != self.chromosome:
-            raise Exception(
+            raise ValueError(
                 "ERROR: CDS chromosome '%s' does not match gene chromosome '%s'"
                 % (cds.chromosome, self.chromosome)
             )
@@ -898,15 +903,15 @@ class Gene(BaseFeature):
         isoform.addExon(exon)
         return result
 
-    def addFeature(self, feature):
+    def addFeature(self, feature: BaseFeature) -> None:
         if feature.strand != self.strand:
-            raise Exception(
+            raise ValueError(
                 "ERROR: feature strand '%s' does not match gene strand '%s'"
                 % (feature.strand, self.strand)
             )
 
         if feature.chromosome != self.chromosome:
-            raise Exception(
+            raise ValueError(
                 "ERROR: feature chromosome '%s' does not match gene chromosome '%s'"
                 % (feature.chromosome, self.chromosome)
             )
@@ -1493,9 +1498,9 @@ class GeneModel(object):
         chromosomes = None
 
         # Convenience method for handling exceptions that could be ignored:
-        def conditionalException(s):
+        def conditionalException(s: str) -> None:
             if not ignoreErrors:
-                raise Exception(s)
+                raise RuntimeError(s)
 
         if isinstance(gffRecords, str):
             if verbose:
@@ -1820,7 +1825,7 @@ class GeneModel(object):
                 gene = self.model[chrName][parent]
                 try:
                     gene.addFeature(BaseFeature(recType, startPos, endPos, chrName, strand, annots))
-                except Exception as e:
+                except ValueError as e:
                     conditionalException("line %d: %s" % (lineCtr, e))
 
         indicator.finish()
