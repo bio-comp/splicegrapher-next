@@ -22,6 +22,25 @@ ALLOWED_NEW_IGNORE_TARGETS: tuple[str, ...] = (
     "tests/**/*.py",
     "docs/notebooks/*.ipynb",
 )
+ENUM_CONTROL_FLOW_PATHS: tuple[str, ...] = (
+    "SpliceGrapher/SpliceGraph.py",
+    "SpliceGrapher/formats/GeneModel.py",
+)
+MAGIC_STRING_CONTROL_FLOW_LITERALS: tuple[str, ...] = (
+    "gene",
+    "mrna",
+    "exon",
+    "cds",
+    "predicted_gene",
+    "pseudogene",
+    "pseudogenic_transcript",
+    "pseudogenic_exon",
+    "parent",
+    "child",
+    "known",
+    "predicted",
+    "unresolved",
+)
 
 
 def _is_allowed_new_ignore_target(path: str) -> bool:
@@ -102,6 +121,39 @@ def _tracked_python_mode_lines(repo_root: Path) -> list[str]:
     return [line for line in completed.stdout.splitlines() if line.strip()]
 
 
+def _load_sources(repo_root: Path, relative_paths: tuple[str, ...]) -> dict[str, str]:
+    source_by_path: dict[str, str] = {}
+    for rel_path in relative_paths:
+        file_path = repo_root / rel_path
+        if file_path.exists():
+            source_by_path[rel_path] = file_path.read_text(encoding="utf-8")
+    return source_by_path
+
+
+def find_magic_string_control_flow(
+    *,
+    source_by_path: dict[str, str],
+    protected_paths: tuple[str, ...],
+) -> list[str]:
+    """Flag direct literal-string branching in enum-protected modules."""
+    violations: list[str] = []
+    for rel_path in protected_paths:
+        source = source_by_path.get(rel_path, "")
+        for line_no, line in enumerate(source.splitlines(), start=1):
+            stripped = line.strip()
+            if stripped.startswith("#"):
+                continue
+            if not (stripped.startswith("if ") or stripped.startswith("elif ")):
+                continue
+            for literal in MAGIC_STRING_CONTROL_FLOW_LITERALS:
+                if f'"{literal}"' in stripped or f"'{literal}'" in stripped:
+                    violations.append(
+                        f"{rel_path}:{line_no}: magic-string control-flow literal {literal!r}"
+                    )
+                    break
+    return violations
+
+
 def main() -> int:
     repo_root = Path(__file__).resolve().parents[2]
     current_ignores = load_per_file_ignores(repo_root / "pyproject.toml")
@@ -114,6 +166,11 @@ def main() -> int:
     executable_violations = find_unexpected_executable_python_paths(
         ls_files_lines=ls_mode_lines,
         executable_allowlist=EXECUTABLE_PYTHON_ALLOWLIST,
+    )
+    source_by_path = _load_sources(repo_root, ENUM_CONTROL_FLOW_PATHS)
+    magic_string_violations = find_magic_string_control_flow(
+        source_by_path=source_by_path,
+        protected_paths=ENUM_CONTROL_FLOW_PATHS,
     )
 
     if ignore_violations:
@@ -128,7 +185,14 @@ def main() -> int:
         for path in executable_violations:
             sys.stdout.write(f"- {path}\n")
 
-    if ignore_violations or executable_violations:
+    if magic_string_violations:
+        sys.stdout.write(
+            "Clean-invariant failure: magic-string control flow found in enum-protected modules.\n"
+        )
+        for violation in magic_string_violations:
+            sys.stdout.write(f"- {violation}\n")
+
+    if ignore_violations or executable_violations or magic_string_violations:
         return 1
 
     sys.stdout.write("Clean-invariant checks passed.\n")

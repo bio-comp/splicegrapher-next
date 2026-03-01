@@ -70,3 +70,19 @@ def test_find_unexpected_executable_python_paths_flags_library_modules() -> None
     )
 
     assert unexpected == ["SpliceGrapher/formats/fasta.py"]
+
+
+def test_find_magic_string_control_flow_flags_literal_branching() -> None:
+    module = _load_guard_module()
+
+    sources = {
+        "SpliceGrapher/SpliceGraph.py": 'if rec_type == "gene":\n    pass\n',
+    }
+
+    violations = module.find_magic_string_control_flow(
+        source_by_path=sources,
+        protected_paths=("SpliceGrapher/SpliceGraph.py",),
+    )
+
+    assert violations
+    assert "SpliceGrapher/SpliceGraph.py:1" in violations[0]
