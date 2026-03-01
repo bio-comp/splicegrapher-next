@@ -4,7 +4,7 @@ Module that encapsulates a splice graph.
 
 import sys
 
-from SpliceGrapher.core.enum_coercion import coerce_record_type, coerce_strand
+from SpliceGrapher.core.enum_coercion import coerce_enum
 from SpliceGrapher.core.enums import AttrKey, EdgeType, NodeDisposition, RecordType, Strand
 from SpliceGrapher.shared.collection_utils import as_list
 from SpliceGrapher.shared.file_utils import ez_open
@@ -692,7 +692,7 @@ class SpliceGraphNode(object):
 
     def __init__(self, id, start, end, strand, chrom, parents=[], children=[]):
         self.id = id
-        self.strand = coerce_strand(strand).value
+        self.strand = coerce_enum(strand, Strand, field="strand").value
         self.chromosome = chrom
         self.minpos = min(start, end)
         self.maxpos = max(start, end)
@@ -1094,7 +1094,7 @@ class SpliceGraph(object):
            'strand'     - strand associated with the graph
         """
         self.chromosome = chromosome
-        self.strand = coerce_strand(strand).value
+        self.strand = coerce_enum(strand, Strand, field="strand").value
         self.nodeDict = {}
         self.attrs = {}
         self.minpos = sys.maxsize
@@ -1519,8 +1519,8 @@ class SpliceGraph(object):
         idgen = getAttribute("idGenerator", idFactory("%s_U" % self.getName()), **args)
 
         # establish correct strand
-        self_strand = coerce_strand(self.strand)
-        other_strand = coerce_strand(other.strand)
+        self_strand = coerce_enum(self.strand, Strand, field="strand")
+        other_strand = coerce_enum(other.strand, Strand, field="strand")
         strand = self_strand
         if self_strand.value in VALID_STRANDS:
             if other_strand.value in VALID_STRANDS and self_strand != other_strand:
@@ -1730,7 +1730,7 @@ class SpliceGraphParser(object):
             parts = s.split("\t")
 
             try:
-                recType = coerce_record_type(parts[2].lower()).value
+                recType = coerce_enum(parts[2].lower(), RecordType, field="record_type").value
                 start = int(parts[3])
                 end = int(parts[4])
             except IndexError:

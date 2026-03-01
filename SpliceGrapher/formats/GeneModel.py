@@ -8,7 +8,7 @@ import os
 import sys
 from urllib.parse import unquote
 
-from SpliceGrapher.core.enum_coercion import coerce_record_type, coerce_strand
+from SpliceGrapher.core.enum_coercion import coerce_enum
 from SpliceGrapher.core.enums import AttrKey, RecordType, Strand
 from SpliceGrapher.shared.file_utils import ez_open
 from SpliceGrapher.shared.format_utils import comma_format
@@ -1562,7 +1562,7 @@ class GeneModel(object):
             # Convert input record type into a known enum-backed domain and map
             # aliases (e.g. predicted_gene -> gene) before processing.
             try:
-                recType = coerce_record_type(parts[2].lower()).value
+                recType = coerce_enum(parts[2].lower(), RecordType, field="record_type").value
             except ValueError as exc:
                 raise ValueError("line %d: unknown record type '%s'" % (lineCtr, parts[2])) from exc
             recType = RECTYPE_MAP.get(recType, recType)
@@ -1570,7 +1570,7 @@ class GeneModel(object):
             startPos = int(parts[3])
             endPos = int(parts[4])
             try:
-                strand = coerce_strand(parts[6]).value
+                strand = coerce_enum(parts[6], Strand, field="strand").value
             except ValueError as exc:
                 raise ValueError("line %d: unknown strand '%s'" % (lineCtr, parts[6])) from exc
 
