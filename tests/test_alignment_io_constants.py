@@ -12,3 +12,7 @@ def test_alignment_io_header_tags_are_enum_backed() -> None:
     assert alignment_io.HEADER_SQ_TAG is SamHeaderTag.SQ
     assert alignment_io.HEADER_VN_TAG is SamHeaderTag.VN
     assert alignment_io.HEADER_SQ_LINE is SamHeaderLine.SQ
+
+
+def test_alignment_io_does_not_export_maxint_alias() -> None:
+    assert not hasattr(alignment_io, "MAXINT")
