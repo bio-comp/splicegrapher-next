@@ -6,19 +6,21 @@ import io
 import subprocess
 from typing import Any
 
+import pytest
+
 from SpliceGrapher.shared import process_utils
 
 
 def test_run_command_redirects_to_devnull_by_default(monkeypatch) -> None:
     captured: dict[str, Any] = {}
 
-    def fake_call(command: str, **kwargs: Any) -> int:
+    def fake_run(command: Any, **kwargs: Any) -> subprocess.CompletedProcess[Any]:
         captured["command"] = command
         captured["stdout"] = kwargs.get("stdout")
         captured["stderr"] = kwargs.get("stderr")
-        return 0
+        return subprocess.CompletedProcess(args=command, returncode=0)
 
-    monkeypatch.setattr(subprocess, "call", fake_call)
+    monkeypatch.setattr(subprocess, "run", fake_run)
     process_utils.runCommand("echo hello", exitOnError=False)
 
     assert captured["command"] == "echo hello"
@@ -29,13 +31,13 @@ def test_run_command_redirects_to_devnull_by_default(monkeypatch) -> None:
 def test_run_command_preserves_explicit_stream_overrides(monkeypatch) -> None:
     captured: dict[str, Any] = {}
 
-    def fake_call(command: str, **kwargs: Any) -> int:
+    def fake_run(command: Any, **kwargs: Any) -> subprocess.CompletedProcess[Any]:
         captured["command"] = command
         captured["stdout"] = kwargs.get("stdout")
         captured["stderr"] = kwargs.get("stderr")
-        return 0
+        return subprocess.CompletedProcess(args=command, returncode=0)
 
-    monkeypatch.setattr(subprocess, "call", fake_call)
+    monkeypatch.setattr(subprocess, "run", fake_run)
 
     process_utils.runCommand(
         "echo hello",
@@ -80,3 +82,63 @@ def test_write_startup_message_emits_structured_event(monkeypatch) -> None:
     event, payload = captured[0]
     assert event == "startup"
     assert payload["script"] == "example_script.py"
+
+
+def test_run_command_defaults_to_shell_false_and_passes_args(monkeypatch) -> None:
+    captured: dict[str, Any] = {}
+
+    def fake_run(command: Any, **kwargs: Any) -> subprocess.CompletedProcess[Any]:
+        captured["command"] = command
+        captured["shell"] = kwargs.get("shell")
+        captured["check"] = kwargs.get("check")
+        return subprocess.CompletedProcess(args=command, returncode=0)
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+
+    process_utils.run_command(["echo", "hello"])
+
+    assert captured["command"] == ["echo", "hello"]
+    assert captured["shell"] is False
+    assert captured["check"] is False
+
+
+def test_run_command_splits_string_when_shell_false(monkeypatch) -> None:
+    captured: dict[str, Any] = {}
+
+    def fake_run(command: Any, **kwargs: Any) -> subprocess.CompletedProcess[Any]:
+        captured["command"] = command
+        captured["shell"] = kwargs.get("shell")
+        return subprocess.CompletedProcess(args=command, returncode=0)
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+
+    process_utils.run_command("echo hello")
+
+    assert captured["command"] == ["echo", "hello"]
+    assert captured["shell"] is False
+
+
+def test_run_command_preserves_string_when_shell_true(monkeypatch) -> None:
+    captured: dict[str, Any] = {}
+
+    def fake_run(command: Any, **kwargs: Any) -> subprocess.CompletedProcess[Any]:
+        captured["command"] = command
+        captured["shell"] = kwargs.get("shell")
+        return subprocess.CompletedProcess(args=command, returncode=0)
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+
+    process_utils.run_command("echo hello", shell=True)
+
+    assert captured["command"] == "echo hello"
+    assert captured["shell"] is True
+
+
+def test_run_command_raises_on_nonzero_return_with_exit_on_error(monkeypatch) -> None:
+    def fake_run(command: Any, **kwargs: Any) -> subprocess.CompletedProcess[Any]:
+        return subprocess.CompletedProcess(args=command, returncode=1)
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+
+    with pytest.raises(Exception, match=r"returned 1"):
+        process_utils.runCommand("false", exitOnError=True)

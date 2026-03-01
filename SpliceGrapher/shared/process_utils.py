@@ -1,8 +1,11 @@
 """Process and command execution helpers extracted from shared.utils."""
 
 import os
+import shlex
 import subprocess
 import sys
+from collections.abc import Sequence
+from typing import Any
 
 from SpliceGrapher.shared.format_utils import time_string
 from SpliceGrapher.shared.logging_utils import get_logger
@@ -21,7 +24,7 @@ def idFactory(pfx="", initial=1):
     idFactory('ev_') will generate 'ev_1', 'ev_2', ..."""
     prefix = pfx if pfx else ""
     counter = initial
-    while 1:
+    while True:
         yield "%s%d" % (prefix, counter)
         counter += 1
 
@@ -32,6 +35,32 @@ def logMessage(s, logstream=None):
     sys.stderr.write(s)
     if logstream:
         logstream.write(s)
+
+
+def run_command(
+    command: str | Sequence[str],
+    *,
+    shell: bool = False,
+    check: bool = False,
+    stdout: Any = None,
+    stderr: Any = None,
+    text: bool = False,
+) -> subprocess.CompletedProcess[Any]:
+    """Run a command with explicit shell behavior."""
+    command_args: str | list[str]
+    if isinstance(command, str):
+        command_args = command if shell else shlex.split(command)
+    else:
+        command_args = list(command)
+
+    return subprocess.run(
+        command_args,
+        shell=shell,
+        check=check,
+        stdout=stdout,
+        stderr=stderr,
+        text=text,
+    )
 
 
 def runCommand(s, **args):
@@ -51,16 +80,19 @@ def runCommand(s, **args):
     if not debug:
         stderr_stream = stderr if stderr is not None else subprocess.DEVNULL
         stdout_stream = stdout if stdout is not None else subprocess.DEVNULL
-        retcode = subprocess.call(
+        completed = run_command(
             s,
             shell=True,
+            check=False,
             stderr=stderr_stream,
             stdout=stdout_stream,
         )
+        retcode = completed.returncode
 
-    if exitOnError and retcode < 0:
+    if exitOnError and retcode != 0:
         LOGGER.error("command_failed", command=s, return_code=retcode)
-        raise Exception("Error running command: returned %d signal\n%s" % (retcode, s))
+        code_type = "signal" if retcode < 0 else "code"
+        raise Exception("Error running command: returned %d %s\n%s" % (retcode, code_type, s))
 
 
 def writeStartupMessage():
