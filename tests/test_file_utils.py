@@ -47,6 +47,12 @@ def test_file_len_and_prefix(tmp_path: Path) -> None:
     assert file_prefix(file_path) == "sample.data"
 
 
+def test_file_len_counts_last_line_without_trailing_newline(tmp_path: Path) -> None:
+    file_path = tmp_path / "no_trailing_newline.txt"
+    file_path.write_text("1\n2\n3")
+    assert file_len(file_path) == 3
+
+
 def test_find_file(tmp_path: Path) -> None:
     one = tmp_path / "one"
     two = tmp_path / "two"
@@ -60,6 +66,17 @@ def test_find_file(tmp_path: Path) -> None:
     assert found == str(target)
 
     assert find_file("missing.txt", f"{one}:{two}") is None
+
+
+def test_find_file_skips_empty_search_segments(tmp_path: Path, monkeypatch) -> None:
+    cwd_target = tmp_path / "cwd_target.txt"
+    cwd_target.write_text("ok")
+    monkeypatch.chdir(tmp_path)
+
+    missing_a = tmp_path / "missing_a"
+    missing_b = tmp_path / "missing_b"
+
+    assert find_file("cwd_target.txt", f"{missing_a}::{missing_b}") is None
 
 
 def test_make_graph_list_file(tmp_path: Path) -> None:
@@ -95,6 +112,22 @@ def test_validate_file_and_dir(tmp_path: Path) -> None:
 
     with pytest.raises(NotADirectoryError):
         validate_dir(data_file)
+
+
+def test_validate_messages_do_not_include_exiting(tmp_path: Path) -> None:
+    with pytest.raises(ValueError, match="Provided path is empty") as value_error:
+        validate_file("")
+    assert "exiting" not in str(value_error.value).lower()
+
+    with pytest.raises(FileNotFoundError, match="not found") as file_error:
+        validate_file(tmp_path / "missing")
+    assert "exiting" not in str(file_error.value).lower()
+
+    file_path = tmp_path / "not_a_dir.txt"
+    file_path.write_text("x")
+    with pytest.raises(NotADirectoryError, match="is not a directory") as dir_error:
+        validate_dir(file_path)
+    assert "exiting" not in str(dir_error.value).lower()
 
 
 def test_legacy_wrappers_are_not_exposed() -> None:
