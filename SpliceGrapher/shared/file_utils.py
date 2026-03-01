@@ -24,6 +24,9 @@ def ez_open(file_name: str | Path) -> TextIO:
     if not path.is_file():
         raise FileNotFoundError(f"File does not exist at {path}")
 
+    if path.suffix.lower() == ".gz":
+        return gzip.open(path, mode="rt")
+
     if _is_gzip_file(path):
         return gzip.open(path, mode="rt")
 
@@ -31,10 +34,21 @@ def ez_open(file_name: str | Path) -> TextIO:
 
 
 def file_len(path: str | Path) -> int:
-    """Return an exact line count for a text file."""
+    """Return an exact line count for a text file using buffered byte reads."""
     file_path = _as_path(path)
-    with file_path.open("r") as instream:
-        return sum(1 for _ in instream)
+    line_count = 0
+    saw_bytes = False
+    last_chunk_ended_with_newline = True
+
+    with file_path.open("rb") as instream:
+        while chunk := instream.read(1024 * 1024):
+            saw_bytes = True
+            line_count += chunk.count(b"\n")
+            last_chunk_ended_with_newline = chunk.endswith(b"\n")
+
+    if saw_bytes and not last_chunk_ended_with_newline:
+        line_count += 1
+    return line_count
 
 
 def file_prefix(path: str | Path) -> str:
@@ -45,7 +59,9 @@ def file_prefix(path: str | Path) -> str:
 def find_file(name: str, search_path: str, delim: str = ":") -> str | None:
     """Find the first matching file in a delimiter-separated path string."""
     for raw_path in search_path.split(delim):
-        base = Path(raw_path) if raw_path else Path(".")
+        if not raw_path:
+            continue
+        base = Path(raw_path)
         file_path = base / name
         if file_path.is_file():
             return str(file_path)
@@ -69,16 +85,16 @@ def validate_dir(path: str | Path) -> None:
     """Validate a directory path."""
     validate_file(path)
     if not _as_path(path).is_dir():
-        raise NotADirectoryError(f"'{path}' is not a directory; exiting.")
+        raise NotADirectoryError(f"'{path}' is not a directory.")
 
 
 def validate_file(path: str | Path) -> None:
     """Validate a non-empty existing path."""
     if not path:
-        raise ValueError("Provided path is empty; exiting.")
+        raise ValueError("Provided path is empty.")
 
     if not _as_path(path).exists():
-        raise FileNotFoundError(f"File '{path}' not found; exiting.")
+        raise FileNotFoundError(f"File '{path}' not found.")
 
 
 __all__ = [
