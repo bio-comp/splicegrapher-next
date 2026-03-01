@@ -1,0 +1,9 @@
+[required_tests]
+core_shared_import_smoke = "tests/test_core_shared_import_smoke.py"
+annotation_io = "tests/test_annotation_io.py"
+alignment_io_parity = "tests/test_alignment_io_parity.py"
+splicegrapher_alignment_io = "tests/test_splicegrapher_alignment_io.py"
+
+[fixture_builders]
+alignment = "tests/helpers/alignment_fixture_builder.py"
+idiffir = "tests/helpers/idiffir_fixture_builder.py"
