@@ -7,7 +7,7 @@ import pytest
 
 from SpliceGrapher.core.enums import RecordType
 from SpliceGrapher.formats import GeneModel as gm
-from SpliceGrapher.formats.GeneModel import Exon, Gene, GeneModel, featureSearch
+from SpliceGrapher.formats.GeneModel import Exon, Gene, GeneModel, feature_search, featureSearch
 
 
 @dataclass
@@ -29,6 +29,28 @@ def test_feature_search_supports_recursive_midpoint_indexing() -> None:
     query = Exon(21, 22, "chr1", "+")
 
     assert featureSearch(features, query) is features[1]
+
+
+def test_feature_search_snake_case_api_returns_expected_match() -> None:
+    features = [
+        Exon(1, 10, "chr1", "+"),
+        Exon(20, 30, "chr1", "+"),
+        Exon(40, 50, "chr1", "+"),
+    ]
+    query = Exon(21, 22, "chr1", "+")
+
+    assert feature_search(features, query) is features[1]
+
+
+def test_feature_search_returns_preceding_feature_when_not_contained() -> None:
+    features = [
+        Exon(1, 10, "chr1", "+"),
+        Exon(20, 30, "chr1", "+"),
+        Exon(40, 50, "chr1", "+"),
+    ]
+    query = Exon(32, 33, "chr1", "+")
+
+    assert feature_search(features, query) is features[1]
 
 
 def test_binary_search_genes_handles_large_gene_lists() -> None:
@@ -63,6 +85,13 @@ def test_write_gff_writes_chromosome_records(tmp_path: Path) -> None:
     lines = gff_path.read_text(encoding="utf-8").splitlines()
     expected_prefix = "Chr1\tSpliceGrapher\tchromosome\t1\t100\t.\t.\t.\tID=Chr1;Name=Chr1"
     assert lines[0].startswith(expected_prefix)
+
+
+def test_get_annotation_dict_ignores_malformed_tokens_and_splits_once() -> None:
+    model = GeneModel(None)
+    parsed = model.getAnnotationDict("ID=GENE1;badtoken;Name=A=B;Parent=P1;=junk;")
+
+    assert parsed == {"ID": "GENE1", "Name": "A=B", "Parent": "P1"}
 
 
 def test_load_gene_model_rejects_unknown_record_type() -> None:
