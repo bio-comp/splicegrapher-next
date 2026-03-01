@@ -4,6 +4,8 @@ Module that encapsulates a splice graph.
 
 import sys
 
+from SpliceGrapher.core.enum_coercion import coerce_record_type, coerce_strand
+from SpliceGrapher.core.enums import AttrKey, EdgeType, NodeDisposition, RecordType, Strand
 from SpliceGrapher.shared.utils import (
     ProgressIndicator,
     as_list,
@@ -15,28 +17,28 @@ from SpliceGrapher.shared.utils import (
 
 # Attributes used in standard GFF3 files:
 SOURCE_NAME = "SpliceGraph"
-DEPRECATED_GENE_REC = "cluster"
-GENE_REC = "graph"
-PARENT_REC = "parent"
-CHILD_REC = "child"
+DEPRECATED_GENE_REC = RecordType.CLUSTER.value
+GENE_REC = RecordType.GRAPH.value
+PARENT_REC = RecordType.PARENT.value
+CHILD_REC = RecordType.CHILD.value
 VALID_GENES = [DEPRECATED_GENE_REC, GENE_REC]
 VALID_RECTYPES = [DEPRECATED_GENE_REC, GENE_REC, PARENT_REC, CHILD_REC]
 
 # Graph node attributes for splice graph GFF files
-PARENT_ATTR = "Parent"
-ID_ATTR = "ID"
+PARENT_ATTR = AttrKey.PARENT.value
+ID_ATTR = AttrKey.ID.value
 KNOWN_ATTRS = [PARENT_ATTR, ID_ATTR]
 
 # Specific node attribute and values for AS forms:
-AS_KEY = "AltForm"
+AS_KEY = AttrKey.ALT_FORM.value
 
 # Attributes for unresolved nodes:
 PUTATIVE_PARENTS = "putative_parents"
 PUTATIVE_CHILDREN = "putative_children"
 
 # Attributes for predicting protein sequences:
-START_CODON_KEY = "StartCodon"
-END_CODON_KEY = "EndCodon"
+START_CODON_KEY = AttrKey.START_CODON.value
+END_CODON_KEY = AttrKey.END_CODON.value
 
 # Create names and abbreviations for AS forms and map each one to the other
 AS_NAMES = [
@@ -80,14 +82,14 @@ NON_35_NAMES = set(AS_NAMES) - set(ALT_35_NAMES)
 NON_35_ABBREVS = set(AS_ABBREVS) - set(ALT_35_ABBREVS)
 
 # Dispositions for nodes in a graph:
-DISPOSITION_KEY = "disposition"
-KNOWN_NODE = "known"
-PREDICTED_NODE = "predicted"
-UNRESOLVED_NODE = "unresolved"
+DISPOSITION_KEY = AttrKey.DISPOSITION.value
+KNOWN_NODE = NodeDisposition.KNOWN.value
+PREDICTED_NODE = NodeDisposition.PREDICTED.value
+UNRESOLVED_NODE = NodeDisposition.UNRESOLVED.value
 
 # Edge types for adding edges to new nodes
-PARENT_EDGE = "parent"
-CHILD_EDGE = "child"
+PARENT_EDGE = EdgeType.PARENT.value
+CHILD_EDGE = EdgeType.CHILD.value
 ALL_EDGE_TYPES = [PARENT_EDGE, CHILD_EDGE]
 
 # Identifies predicted nodes
@@ -103,12 +105,12 @@ IR_TP_EVIDENCE = "ir_tp_evidence"
 IR_FP_EVIDENCE = "ir_fp_evidence"
 
 # Specific node attribute for isoform names
-ISO_KEY = "Isoforms"
+ISO_KEY = AttrKey.ISOFORMS.value
 
 # Specific graph attribute for expanded gene models
-ALT_MODEL_KEY = "Expanded"
+ALT_MODEL_KEY = AttrKey.EXPANDED.value
 
-VALID_STRANDS = ["+", "-"]
+VALID_STRANDS = [Strand.PLUS.value, Strand.MINUS.value]
 
 
 # ========================================================================
@@ -693,7 +695,7 @@ class SpliceGraphNode(object):
 
     def __init__(self, id, start, end, strand, chrom, parents=[], children=[]):
         self.id = id
-        self.strand = strand
+        self.strand = coerce_strand(strand).value
         self.chromosome = chrom
         self.minpos = min(start, end)
         self.maxpos = max(start, end)
@@ -1095,7 +1097,7 @@ class SpliceGraph(object):
            'strand'     - strand associated with the graph
         """
         self.chromosome = chromosome
-        self.strand = strand
+        self.strand = coerce_strand(strand).value
         self.nodeDict = {}
         self.attrs = {}
         self.minpos = sys.maxsize
@@ -1520,12 +1522,14 @@ class SpliceGraph(object):
         idgen = getAttribute("idGenerator", idFactory("%s_U" % self.getName()), **args)
 
         # establish correct strand
-        strand = self.strand
-        if self.strand in VALID_STRANDS:
-            if other.strand in VALID_STRANDS and self.strand != other.strand:
+        self_strand = coerce_strand(self.strand)
+        other_strand = coerce_strand(other.strand)
+        strand = self_strand
+        if self_strand.value in VALID_STRANDS:
+            if other_strand.value in VALID_STRANDS and self_strand != other_strand:
                 raise AttributeError("Cannot merge graphs with conflicting strands.\n")
-        elif other.strand in VALID_STRANDS:
-            strand = other.strand
+        elif other_strand.value in VALID_STRANDS:
+            strand = other_strand
 
         # update graph name
         if keepName:
@@ -1539,7 +1543,7 @@ class SpliceGraph(object):
             updateRoot(other, self)
             updateLeaf(other, self)
 
-        result = SpliceGraph(newName, self.chromosome, strand)
+        result = SpliceGraph(newName, self.chromosome, strand.value)
         allNodes = self.resolvedNodes() + other.resolvedNodes()
         for node in allNodes:
             newNode = result.addNode(next(idgen), node.minpos, node.maxpos)
@@ -1729,12 +1733,16 @@ class SpliceGraphParser(object):
             parts = s.split("\t")
 
             try:
-                recType = parts[2]
+                recType = coerce_record_type(parts[2].lower()).value
                 start = int(parts[3])
                 end = int(parts[4])
             except IndexError:
                 raise ValueError(
                     "Illegal record in splice graph file at line %d:\n\t%s" % (lineNo, s)
+                )
+            except ValueError:
+                raise ValueError(
+                    "Illegal record type in splice graph file at line %d:\n\t%s" % (lineNo, s)
                 )
 
             if recType not in VALID_RECTYPES:
@@ -1757,7 +1765,7 @@ class SpliceGraphParser(object):
                     "GFF attribute field '%s' has no ID at line %d" % (parts[-1], lineNo)
                 )
 
-            if recType.lower() in VALID_GENES:
+            if recType in VALID_GENES:
                 # Add edges to previous graph
                 if graph is not None:
                     for e in edges:
