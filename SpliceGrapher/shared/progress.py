@@ -1,51 +1,70 @@
 """Progress and random-iterator helpers extracted from shared.utils."""
 
+from __future__ import annotations
+
 import random
 import sys
 
-from SpliceGrapher.shared.format_utils import comma_format
+from tqdm.auto import tqdm
+
+
+def _is_tty(stream) -> bool:
+    """Return True when a stream is interactive."""
+    try:
+        return bool(stream.isatty())
+    except Exception:
+        return False
 
 
 class ProgressIndicator:
-    """A simple progress indicator."""
+    """Compatibility wrapper around a tqdm progress bar."""
 
     def __init__(self, increment, description="", verbose=True):
-        self.limit = increment
-        self.barlim = int(self.limit / 10)
-        self.dotlim = int(self.barlim / 5)
+        self.limit = max(1, int(increment))
         self.descr = description
-        self.started = False
         self.verbose = verbose
         self.ctr = 0
+        self._enabled = self.verbose and _is_tty(sys.stderr)
+        self._bar = tqdm(
+            total=None,
+            desc=self.descr or None,
+            disable=not self._enabled,
+            leave=False,
+            unit="records",
+            miniters=self.limit,
+            dynamic_ncols=True,
+            file=sys.stderr,
+        )
 
     def count(self):
         """Returns the current count."""
         return self.ctr
 
     def finish(self):
-        """Finishes the progress output by appending a newline,
-        if anything has been written."""
-        if self.started:
-            sys.stderr.write("\n")
-        self.started = False
+        """Finishes progress output."""
+        self._bar.close()
 
     def reset(self):
         """Resets the indicator to be used again."""
-        self.ctr = 0
         self.finish()
+        self.ctr = 0
+        self._bar = tqdm(
+            total=None,
+            desc=self.descr or None,
+            disable=not self._enabled,
+            leave=False,
+            unit="records",
+            miniters=self.limit,
+            dynamic_ncols=True,
+            file=sys.stderr,
+        )
 
     def update(self):
         """Updates the indicator."""
         self.ctr += 1
         if not self.verbose:
             return
-        if self.ctr % self.limit == 0:
-            sys.stderr.write(f"{comma_format(self.ctr)} {self.descr}\n")
-        elif self.ctr % self.barlim == 0:
-            sys.stderr.write("|")
-        elif self.ctr % self.dotlim == 0:
-            self.started = True
-            sys.stderr.write(".")
+        self._bar.update(1)
 
 
 class RandomListIterator:
@@ -60,7 +79,7 @@ class RandomListIterator:
         self.rand = random.Random()
         self.limit = len(self.values) - 1
         if "seed" in args:
-            self.rand.seed = args["seed"]
+            self.rand.seed(args["seed"])
 
     def __iter__(self):
         return self

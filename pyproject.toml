@@ -43,6 +43,7 @@ dependencies = [
   "pydantic>=2.10",
   "pydantic-settings>=2.6",
   "structlog>=24.4",
+  "tqdm>=4.66",
 ]
 
 [project.urls]

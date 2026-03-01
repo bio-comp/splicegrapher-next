@@ -102,6 +102,27 @@ export SGN_SPLICEGRAPHER__GENE_MODEL=/mnt/data/genes.gtf
 
 Detailed loader behavior and API examples are in `docs/configuration.md`.
 
+## Progress Reporting Policy (tqdm)
+
+User-visible long-running loops should use `SpliceGrapher.shared.progress.ProgressIndicator`.
+This compatibility class now routes through `tqdm` and applies TTY-aware defaults:
+
+- interactive terminal + `verbose=True`: tqdm progress is enabled
+- non-interactive stderr or `verbose=False`: progress output is suppressed
+
+Example:
+
+```python
+from SpliceGrapher.shared.progress import ProgressIndicator
+
+indicator = ProgressIndicator(1000000, description="loading", verbose=True)
+for _ in range(5000):
+    indicator.update()
+indicator.finish()
+```
+
+Logging policy remains tracked separately in issue `#9` (structlog adoption).
+
 ## Conda / Mamba / Miniconda / Bioconda-Friendly Guidance
 
 Use conda-based environments when needed for scientific stacks:
@@ -111,6 +132,12 @@ mamba create -n splicegrapher-next python=3.12 -y
 mamba activate splicegrapher-next
 mamba install -c conda-forge -c bioconda numpy scipy matplotlib pysam gffutils networkx -y
 python -m pip install -e .
+```
+
+Quick compatibility smoke check in that environment:
+
+```bash
+python -c "import tqdm; import SpliceGrapher; print(SpliceGrapher.__name__)"
 ```
 
 `uv` remains the preferred local development workflow in this repository.
