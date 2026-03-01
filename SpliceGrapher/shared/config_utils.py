@@ -1,36 +1,45 @@
 """Configuration and environment helpers extracted from shared.utils."""
 
-import configparser as ConfigParser
+from __future__ import annotations
+
+import configparser
 import os
+from pathlib import Path
 
 
-def configMap(cfgFile):
-    """Reads a configuration file and returns a dictionary of all sections, options and values."""
-    result = {}
-    config = ConfigParser.ConfigParser()
-    # Activates case-sensitivity:
+def configMap(cfgFile: str | Path) -> dict[str, dict[str, str]]:
+    """Read an INI configuration file into a nested mapping.
+
+    Keeps section and option names case-sensitive for compatibility with
+    existing SGN config conventions.
+    """
+    cfg_path = cfgFile if isinstance(cfgFile, Path) else Path(cfgFile)
+    if not cfg_path.is_file():
+        raise FileNotFoundError(f"Configuration file not found: {cfg_path}")
+
+    config = configparser.ConfigParser()
     config.optionxform = str
-
     try:
-        config.read(cfgFile)
-    except ConfigParser.ParsingError:
-        raise ValueError("Invalid configuration file %s" % cfgFile)
+        with cfg_path.open("r", encoding="utf-8") as config_stream:
+            config.read_file(config_stream)
+    except (configparser.ParsingError, configparser.MissingSectionHeaderError) as exc:
+        raise ValueError(f"Invalid configuration file {cfg_path}") from exc
 
+    result: dict[str, dict[str, str]] = {}
     for sect in config.sections():
-        result[sect] = {}
-        options = config.options(sect)
-        for opt in options:
+        values: dict[str, str] = {}
+        for opt in config.options(sect):
             try:
-                result[sect][opt] = config.get(sect, opt)
-            except Exception:
-                result[sect][opt] = None
+                values[opt] = config.get(sect, opt)
+            except configparser.Error as exc:
+                raise ValueError(
+                    f"Invalid configuration value for option '{opt}' in section '{sect}'"
+                ) from exc
+        result[sect] = values
     return result
 
 
-def getEnvironmentValue(name, default=None):
+def getEnvironmentValue(name: str, default: str | None = None) -> str | None:
     """Returns the value for the given environment variable name, if found;
     otherwise returns default value."""
-    try:
-        return os.environ[name]
-    except KeyError:
-        return default
+    return os.getenv(name, default)
