@@ -3,7 +3,7 @@
 import io
 import os
 import re
-from sys import maxsize as MAXINT
+import sys
 
 import pysam
 import structlog
@@ -292,7 +292,7 @@ def _collect_pysam_data(path, **args):
     chromosomes = getAttribute("chromosomes", None, **args)
     chrom_set = makeChromosomeSet(chromosomes)
     get_junctions = getAttribute("junctions", True, **args)
-    maxpos = getAttribute("maxpos", MAXINT, **args)
+    maxpos = getAttribute("maxpos", sys.maxsize, **args)
     minanchor = getAttribute("minanchor", 0, **args)
     minjct = getAttribute("minjct", 1, **args)
 
@@ -315,7 +315,7 @@ def _collect_pysam_data(path, **args):
                 continue
 
             if chrom not in depths:
-                depths[chrom] = [0] * (maxpos + 1) if maxpos < MAXINT else [0]
+                depths[chrom] = [0] * (maxpos + 1) if maxpos < sys.maxsize else [0]
             if chrom not in limit:
                 limit[chrom] = 0
             if alignments and chrom not in align:
@@ -373,7 +373,7 @@ def _collect_pysam_data(path, **args):
                         existing.update(new_jct)
 
     for chrom in depths:
-        max_depth = max(maxpos, limit[chrom]) if maxpos < MAXINT else limit[chrom]
+        max_depth = max(maxpos, limit[chrom]) if maxpos < sys.maxsize else limit[chrom]
         if max_depth < len(depths[chrom]):
             depths[chrom] = depths[chrom][:max_depth]
 
@@ -829,7 +829,7 @@ def getSamDepths(samRecords, **args):
     chromosome found in the file.  Returns a dictionary of
     read-depth lists indexed by chromosome."""
     verbose = getAttribute("verbose", False, **args)
-    maxpos = getAttribute("maxpos", MAXINT, **args)
+    maxpos = getAttribute("maxpos", sys.maxsize, **args)
     chromosomes = getAttribute("chromosomes", None, **args)
     chromSet = makeChromosomeSet(chromosomes)
 
@@ -846,7 +846,7 @@ def getSamDepths(samRecords, **args):
 
     depths = {}
     limit = {}
-    if verbose and maxpos < MAXINT:
+    if verbose and maxpos < sys.maxsize:
         LOGGER.info("loading_sam_records", max_position=maxpos)
     indicator = ProgressIndicator(1000000, verbose=verbose)
 
@@ -876,7 +876,7 @@ def getSamDepths(samRecords, **args):
         if c not in limit:
             limit[c] = 0
         if c not in depths:
-            depths[c] = [0] * (maxpos + 1) if maxpos < MAXINT else [0]
+            depths[c] = [0] * (maxpos + 1) if maxpos < sys.maxsize else [0]
 
         prvPos = rec.attrs[POS]
         if prvPos > maxpos:
@@ -913,7 +913,7 @@ def getSamDepths(samRecords, **args):
     indicator.finish()
 
     for c in depths:
-        maxDepth = max(maxpos, limit[c]) if maxpos < MAXINT else limit[c]
+        maxDepth = max(maxpos, limit[c]) if maxpos < sys.maxsize else limit[c]
         if maxDepth < len(depths[c]):
             depths[c] = depths[c][:maxDepth]
 
@@ -978,7 +978,7 @@ def getSamJunctions(samRecords, **args):
     for each chromosome found in the file.  Returns a dictionary of
     junction lists indexed by chromosome."""
     verbose = getAttribute("verbose", False, **args)
-    maxpos = getAttribute("maxpos", MAXINT, **args)
+    maxpos = getAttribute("maxpos", sys.maxsize, **args)
     minanchor = getAttribute("minanchor", 0, **args)
     minjct = getAttribute("minjct", 1, **args)
     chromosomes = getAttribute("chromosomes", None, **args)
@@ -1070,7 +1070,7 @@ def getSamReadData(samRecords, **args):
     chromosomes = getAttribute("chromosomes", None, **args)
     chromSet = makeChromosomeSet(chromosomes)
     getJct = getAttribute("junctions", True, **args)
-    maxpos = getAttribute("maxpos", MAXINT, **args)
+    maxpos = getAttribute("maxpos", sys.maxsize, **args)
     minanchor = getAttribute("minanchor", 0, **args)
     minjct = getAttribute("minjct", 1, **args)
     verbose = getAttribute("verbose", False, **args)
@@ -1090,7 +1090,7 @@ def getSamReadData(samRecords, **args):
     jctTmp = {}
     limit = {}
     if verbose:
-        if maxpos < MAXINT:
+        if maxpos < sys.maxsize:
             LOGGER.info("loading_sam_records", max_position=maxpos)
         LOGGER.info(
             "loading_splice_junctions",
@@ -1119,7 +1119,7 @@ def getSamReadData(samRecords, **args):
                 continue
 
         if c not in depths:
-            depths[c] = [0] * (maxpos + 1) if maxpos < MAXINT else [0]
+            depths[c] = [0] * (maxpos + 1) if maxpos < sys.maxsize else [0]
 
         if c not in limit:
             limit[c] = 0
@@ -1186,7 +1186,7 @@ def getSamReadData(samRecords, **args):
     indicator.finish()
 
     for c in depths:
-        maxDepth = max(maxpos, limit[c]) if maxpos < MAXINT else limit[c]
+        maxDepth = max(maxpos, limit[c]) if maxpos < sys.maxsize else limit[c]
         if maxDepth < len(depths[c]):
             depths[c] = depths[c][:maxDepth]
 
