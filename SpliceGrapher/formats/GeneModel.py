@@ -10,7 +10,10 @@ from urllib.parse import unquote
 
 from SpliceGrapher.core.enum_coercion import coerce_record_type, coerce_strand
 from SpliceGrapher.core.enums import AttrKey, RecordType, Strand
-from SpliceGrapher.shared.utils import ProgressIndicator, comma_format, ez_open, getAttribute
+from SpliceGrapher.shared.file_utils import ez_open
+from SpliceGrapher.shared.format_utils import comma_format
+from SpliceGrapher.shared.process_utils import getAttribute
+from SpliceGrapher.shared.progress import ProgressIndicator
 
 # GFF record types
 CDS_TYPE = RecordType.CDS.value

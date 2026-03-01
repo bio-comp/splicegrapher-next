@@ -6,14 +6,11 @@ import sys
 
 from SpliceGrapher.core.enum_coercion import coerce_record_type, coerce_strand
 from SpliceGrapher.core.enums import AttrKey, EdgeType, NodeDisposition, RecordType, Strand
-from SpliceGrapher.shared.utils import (
-    ProgressIndicator,
-    as_list,
-    ez_open,
-    getAttribute,
-    idFactory,
-    list_string,
-)
+from SpliceGrapher.shared.collection_utils import as_list
+from SpliceGrapher.shared.file_utils import ez_open
+from SpliceGrapher.shared.format_utils import list_string
+from SpliceGrapher.shared.process_utils import getAttribute, idFactory
+from SpliceGrapher.shared.progress import ProgressIndicator
 
 # Attributes used in standard GFF3 files:
 SOURCE_NAME = "SpliceGraph"

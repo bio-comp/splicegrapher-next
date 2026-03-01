@@ -8,12 +8,14 @@ from sys import maxsize as MAXINT
 import pysam
 import structlog
 
+from SpliceGrapher.shared.file_utils import ez_open
+from SpliceGrapher.shared.process_utils import getAttribute
+from SpliceGrapher.shared.progress import ProgressIndicator
 from SpliceGrapher.shared.ShortRead import (
     SpliceJunction,
     isDepthsFile,
     readDepths,
 )
-from SpliceGrapher.shared.utils import ProgressIndicator, ez_open, getAttribute
 
 LOGGER = structlog.get_logger(__name__)
 
