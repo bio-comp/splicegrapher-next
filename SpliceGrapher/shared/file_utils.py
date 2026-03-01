@@ -1,80 +1,145 @@
 """Filesystem and file-format helpers extracted from shared.utils."""
 
+from __future__ import annotations
+
 import gzip
-import os
-from glob import glob
+import warnings
+from pathlib import Path
+from typing import TextIO
+
+_GZIP_MAGIC = b"\x1f\x8b"
 
 
-def ezopen(fileName):
-    """Allows clients to open files without regard for whether they're gzipped."""
-    if not (os.path.exists(fileName) and os.path.isfile(fileName)):
-        raise ValueError("file does not exist at %s" % fileName)
-
-    fileHandle = gzip.GzipFile(fileName)
-    try:
-        fileHandle.readline()
-        return gzip.GzipFile(fileName)
-    except Exception:
-        return open(fileName)
-    finally:
-        fileHandle.close()
+def _as_path(path: str | Path) -> Path:
+    return path if isinstance(path, Path) else Path(path)
 
 
-def fileLen(path):
-    """Simple function to get an exact file length."""
-    line_count = 0
-    with open(path) as instream:
-        for line_count, _line in enumerate(instream, start=1):
-            pass
-    return line_count
+def _is_gzip_file(path: Path) -> bool:
+    with path.open("rb") as handle:
+        return handle.read(2) == _GZIP_MAGIC
 
 
-def filePrefix(f):
-    """Returns the filename prefix for a file.  For example:
-    /my/dir/myfile.ext --> myfile"""
-    _head, tail = os.path.split(f)
-    prefix, _suffix = os.path.splitext(tail)
-    return prefix
+def ez_open(file_name: str | Path) -> TextIO:
+    """Open plain-text or gzipped files in text mode."""
+    path = _as_path(file_name)
+    if not path.is_file():
+        raise FileNotFoundError(f"File does not exist at {path}")
+
+    if _is_gzip_file(path):
+        return gzip.open(path, mode="rt")
+
+    return path.open("r")
 
 
-def findFile(name, path, delim=":"):
-    """Finds the first instance of a file name in the given path string."""
-    paths = path.split(delim)
-    for p in paths:
-        filePath = os.path.join(p, name)
-        if os.path.exists(filePath) and os.path.isfile(filePath):
-            return filePath
+def file_len(path: str | Path) -> int:
+    """Return an exact line count for a text file."""
+    file_path = _as_path(path)
+    with file_path.open("r") as instream:
+        return sum(1 for _ in instream)
 
 
-def makeGraphListFile(spliceGraphDir):
-    """Given a path to a top-level directory of splice graphs, returns
-    a file that contains the paths to all graphs under that directory.
-    Follows the standard SpliceGrapher directory structure:
-        top-level-dir/chromosome-dir/splice-graph-file"""
-    subdirs = os.path.join(spliceGraphDir, "*")
-    target = os.path.join(subdirs, "*.gff")
-    graphList = glob(target)
-    if not graphList:
-        raise ValueError("No splice graphs found in %s\n" % spliceGraphDir)
-
-    graphList.sort()
-    result = "%s.lis" % spliceGraphDir
-    with open(result, "w") as graphStream:
-        graphStream.write("\n".join(graphList))
-    return result
+def file_prefix(path: str | Path) -> str:
+    """Return the filename stem for a file path."""
+    return _as_path(path).stem
 
 
-def validateDir(path):
-    """Standard method for validating directory paths."""
-    validateFile(path)
-    if not os.path.isdir(path):
-        raise Exception("'%s' is not a directory; exiting." % path)
+def find_file(name: str, search_path: str, delim: str = ":") -> str | None:
+    """Find the first matching file in a delimiter-separated path string."""
+    for raw_path in search_path.split(delim):
+        base = Path(raw_path) if raw_path else Path(".")
+        file_path = base / name
+        if file_path.is_file():
+            return str(file_path)
+    return None
 
 
-def validateFile(path):
-    """Standard method for validating file paths."""
+def make_graph_list_file(splice_graph_dir: str | Path) -> str:
+    """Write a sorted list of graph `.gff` paths under `<root>/*/*.gff`."""
+    root = _as_path(splice_graph_dir)
+    validate_dir(root)
+    graph_list = sorted(str(path) for path in root.glob("*/*.gff") if path.is_file())
+    if not graph_list:
+        raise ValueError(f"No splice graphs found in {root}")
+
+    result = Path(f"{root}.lis")
+    result.write_text("\n".join(graph_list) + "\n")
+    return str(result)
+
+
+def validate_dir(path: str | Path) -> None:
+    """Validate a directory path."""
+    validate_file(path)
+    if not _as_path(path).is_dir():
+        raise NotADirectoryError(f"'{path}' is not a directory; exiting.")
+
+
+def validate_file(path: str | Path) -> None:
+    """Validate a non-empty existing path."""
     if not path:
-        raise Exception("'%s' is not a valid file path; exiting." % path)
+        raise ValueError("Provided path is empty; exiting.")
 
-    if not os.path.exists(path):
-        raise Exception("File '%s' not found; exiting." % path)
+    if not _as_path(path).exists():
+        raise FileNotFoundError(f"File '{path}' not found; exiting.")
+
+
+def _warn_deprecated(old_name: str, new_name: str) -> None:
+    warnings.warn(
+        f"'{old_name}' is deprecated and will be removed in a future release. "
+        f"Use '{new_name}' instead.",
+        DeprecationWarning,
+        stacklevel=3,
+    )
+
+
+# Compatibility wrappers retained while older modules migrate to snake_case names.
+def ezopen(file_name: str | Path) -> TextIO:
+    _warn_deprecated("ezopen", "ez_open")
+    return ez_open(file_name)
+
+
+def fileLen(path: str | Path) -> int:
+    _warn_deprecated("fileLen", "file_len")
+    return file_len(path)
+
+
+def filePrefix(path: str | Path) -> str:
+    _warn_deprecated("filePrefix", "file_prefix")
+    return file_prefix(path)
+
+
+def findFile(name: str, search_path: str, delim: str = ":") -> str | None:
+    _warn_deprecated("findFile", "find_file")
+    return find_file(name, search_path, delim)
+
+
+def makeGraphListFile(splice_graph_dir: str | Path) -> str:
+    _warn_deprecated("makeGraphListFile", "make_graph_list_file")
+    return make_graph_list_file(splice_graph_dir)
+
+
+def validateDir(path: str | Path) -> None:
+    _warn_deprecated("validateDir", "validate_dir")
+    validate_dir(path)
+
+
+def validateFile(path: str | Path) -> None:
+    _warn_deprecated("validateFile", "validate_file")
+    validate_file(path)
+
+
+__all__ = [
+    "ez_open",
+    "file_len",
+    "file_prefix",
+    "find_file",
+    "make_graph_list_file",
+    "validate_dir",
+    "validate_file",
+    "ezopen",
+    "fileLen",
+    "filePrefix",
+    "findFile",
+    "makeGraphListFile",
+    "validateDir",
+    "validateFile",
+]

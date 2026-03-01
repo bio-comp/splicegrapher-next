@@ -3,7 +3,7 @@
 import random
 import sys
 
-from SpliceGrapher.shared.format_utils import commaFormat
+from SpliceGrapher.shared.format_utils import comma_format
 
 
 class ProgressIndicator:
@@ -40,7 +40,7 @@ class ProgressIndicator:
         if not self.verbose:
             return
         if self.ctr % self.limit == 0:
-            sys.stderr.write("%s %s\n" % (commaFormat(self.ctr), self.descr))
+            sys.stderr.write(f"{comma_format(self.ctr)} {self.descr}\n")
         elif self.ctr % self.barlim == 0:
             sys.stderr.write("|")
         elif self.ctr % self.dotlim == 0:

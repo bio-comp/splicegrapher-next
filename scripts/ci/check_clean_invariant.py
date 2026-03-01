@@ -4,13 +4,8 @@ from __future__ import annotations
 
 import subprocess
 import sys
+import tomllib
 from pathlib import Path, PurePosixPath
-
-try:
-    import tomllib
-except ModuleNotFoundError:  # pragma: no cover - Python < 3.11 fallback
-    import tomli as tomllib
-
 
 BASELINE_PER_FILE_IGNORES: dict[str, set[str]] = {
     "SpliceGrapher/SpliceGraph.py": {"E", "F"},
