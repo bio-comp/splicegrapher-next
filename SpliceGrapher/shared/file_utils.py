@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import gzip
-import warnings
 from pathlib import Path
 from typing import TextIO
 
@@ -82,51 +81,6 @@ def validate_file(path: str | Path) -> None:
         raise FileNotFoundError(f"File '{path}' not found; exiting.")
 
 
-def _warn_deprecated(old_name: str, new_name: str) -> None:
-    warnings.warn(
-        f"'{old_name}' is deprecated and will be removed in a future release. "
-        f"Use '{new_name}' instead.",
-        DeprecationWarning,
-        stacklevel=3,
-    )
-
-
-# Compatibility wrappers retained while older modules migrate to snake_case names.
-def ezopen(file_name: str | Path) -> TextIO:
-    _warn_deprecated("ezopen", "ez_open")
-    return ez_open(file_name)
-
-
-def fileLen(path: str | Path) -> int:
-    _warn_deprecated("fileLen", "file_len")
-    return file_len(path)
-
-
-def filePrefix(path: str | Path) -> str:
-    _warn_deprecated("filePrefix", "file_prefix")
-    return file_prefix(path)
-
-
-def findFile(name: str, search_path: str, delim: str = ":") -> str | None:
-    _warn_deprecated("findFile", "find_file")
-    return find_file(name, search_path, delim)
-
-
-def makeGraphListFile(splice_graph_dir: str | Path) -> str:
-    _warn_deprecated("makeGraphListFile", "make_graph_list_file")
-    return make_graph_list_file(splice_graph_dir)
-
-
-def validateDir(path: str | Path) -> None:
-    _warn_deprecated("validateDir", "validate_dir")
-    validate_dir(path)
-
-
-def validateFile(path: str | Path) -> None:
-    _warn_deprecated("validateFile", "validate_file")
-    validate_file(path)
-
-
 __all__ = [
     "ez_open",
     "file_len",
@@ -135,11 +89,4 @@ __all__ = [
     "make_graph_list_file",
     "validate_dir",
     "validate_file",
-    "ezopen",
-    "fileLen",
-    "filePrefix",
-    "findFile",
-    "makeGraphListFile",
-    "validateDir",
-    "validateFile",
 ]

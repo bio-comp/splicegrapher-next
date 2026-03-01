@@ -1,25 +1,19 @@
 from __future__ import annotations
 
 import gzip
+import importlib
 from pathlib import Path
 
 import pytest
 
 from SpliceGrapher.shared.file_utils import (
     ez_open,
-    ezopen,
     file_len,
     file_prefix,
-    fileLen,
-    filePrefix,
     find_file,
-    findFile,
     make_graph_list_file,
-    makeGraphListFile,
     validate_dir,
     validate_file,
-    validateDir,
-    validateFile,
 )
 
 
@@ -103,38 +97,16 @@ def test_validate_file_and_dir(tmp_path: Path) -> None:
         validate_dir(data_file)
 
 
-@pytest.mark.parametrize(
-    ("legacy_call", "warning_text"),
-    [
-        (lambda path: ezopen(path), "ezopen"),
-        (lambda path: fileLen(path), "fileLen"),
-        (lambda path: filePrefix(path), "filePrefix"),
-        (lambda path: findFile(path.name, str(path.parent)), "findFile"),
-        (lambda path: validateDir(path.parent), "validateDir"),
-        (lambda path: validateFile(path), "validateFile"),
-    ],
-)
-def test_legacy_wrappers_emit_deprecation_warning(
-    tmp_path: Path, legacy_call, warning_text: str
-) -> None:
-    target = tmp_path / "target.txt"
-    target.write_text("ok\n")
-
-    with pytest.warns(DeprecationWarning, match=warning_text):
-        result = legacy_call(target)
-
-    # Avoid leaving file handles open for the ezopen case.
-    if hasattr(result, "close"):
-        result.close()
-
-
-def test_make_graph_list_legacy_wrapper_emits_deprecation_warning(tmp_path: Path) -> None:
-    root = tmp_path / "graphs"
-    (root / "chr1").mkdir(parents=True)
-    gff = root / "chr1" / "a.gff"
-    gff.write_text("node\n")
-
-    with pytest.warns(DeprecationWarning, match="makeGraphListFile"):
-        list_path = makeGraphListFile(root)
-
-    assert Path(list_path).exists()
+def test_legacy_wrappers_are_not_exposed() -> None:
+    module = importlib.import_module("SpliceGrapher.shared.file_utils")
+    legacy_names = [
+        "ezopen",
+        "fileLen",
+        "filePrefix",
+        "findFile",
+        "makeGraphListFile",
+        "validateDir",
+        "validateFile",
+    ]
+    for name in legacy_names:
+        assert not hasattr(module, name)
