@@ -122,7 +122,7 @@ Behavioral modifications from source baseline:
 Validation run:
 
 - `uv run pytest tests/test_core_shared_import_smoke.py -q`
-- `uv run python -c "import SpliceGrapher, SpliceGrapher.SpliceGraph, SpliceGrapher.shared.utils, SpliceGrapher.shared.streams"`
+- `uv run python -c "import SpliceGrapher, SpliceGrapher.SpliceGraph, SpliceGrapher.shared.utils"`
 - `uv build`
 
 ### 2026-02-24 - Residual identity cfg extraction (issue #6)
@@ -209,4 +209,54 @@ Validation run:
 - `uv run ruff check . --fix`
 - `uv run ruff format .`
 - `uv run pytest`
+- `uv build`
+
+### 2026-03-01 - Remove shared streams module (issue #58)
+
+Date:
+
+- 2026-03-01
+
+Issue/PR:
+
+- Issue: #58
+- PR: (to be filled when opened)
+
+Source repository/path:
+
+- Repository: `bio-comp/splicegrapher-next`
+- Paths:
+  - `SpliceGrapher/shared/process_utils.py`
+  - `SpliceGrapher/shared/streams.py`
+  - `tests/test_process_utils.py`
+  - `tests/test_core_shared_import_smoke.py`
+
+Source commit/ref:
+
+- `7158bf0ec8f5e8ee761ad337839c2f7b3958f8c9`
+
+Destination paths:
+
+- `SpliceGrapher/shared/process_utils.py`
+- `SpliceGrapher/shared/streams.py` (removed)
+- `tests/test_process_utils.py`
+- `tests/test_core_shared_import_smoke.py`
+
+License/notice files added or updated:
+
+- `PROVENANCE.md`
+
+Behavioral modifications from source baseline:
+
+- Replaced process-global fd redirection in `runCommand` with subprocess-local
+  redirection using `subprocess.DEVNULL` defaults.
+- Removed `SpliceGrapher/shared/streams.py` and all code/test imports of
+  `SpliceGrapher.shared.streams`.
+
+Validation run:
+
+- `uv run pytest -q tests/test_process_utils.py tests/test_core_shared_import_smoke.py`
+- `uv run ruff check .`
+- `uv run ruff format --check .`
+- `uv run pytest -q`
 - `uv build`

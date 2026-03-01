@@ -4,7 +4,6 @@ import os
 import subprocess
 import sys
 
-from SpliceGrapher.shared import streams
 from SpliceGrapher.shared.format_utils import time_string
 
 
@@ -45,15 +44,14 @@ def runCommand(s, **args):
 
     retcode = 0
     if not debug:
-        if not stderr:
-            streams.hideStderr()
-        if not stdout:
-            streams.hideStdout()
-        retcode = subprocess.call(s, shell=True, stderr=stderr, stdout=stdout)
-        if not stderr:
-            streams.showStderr()
-        if not stdout:
-            streams.showStdout()
+        stderr_stream = stderr if stderr is not None else subprocess.DEVNULL
+        stdout_stream = stdout if stdout is not None else subprocess.DEVNULL
+        retcode = subprocess.call(
+            s,
+            shell=True,
+            stderr=stderr_stream,
+            stdout=stdout_stream,
+        )
 
     if exitOnError and retcode < 0:
         raise Exception("Error running command: returned %d signal\n%s" % (retcode, s))

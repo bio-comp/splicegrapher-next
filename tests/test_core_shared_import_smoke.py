@@ -16,11 +16,9 @@ def test_import_splicegraph_module() -> None:
     assert hasattr(module, "SpliceGraph")
 
 
-def test_import_shared_utils_and_streams() -> None:
+def test_import_shared_utils_and_config() -> None:
     utils_module = importlib.import_module("SpliceGrapher.shared.utils")
-    streams_module = importlib.import_module("SpliceGrapher.shared.streams")
     config_module = importlib.import_module("SpliceGrapher.shared.config")
 
     assert hasattr(utils_module, "ProgressIndicator")
-    assert hasattr(streams_module, "hideStdout")
     assert hasattr(config_module, "load_config")
