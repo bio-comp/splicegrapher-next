@@ -2,16 +2,16 @@
 
 from __future__ import annotations
 
-from enum import Enum
+from enum import StrEnum
 
 
-class Strand(str, Enum):
+class Strand(StrEnum):
     PLUS = "+"
     MINUS = "-"
     UNKNOWN = "."
 
 
-class RecordType(str, Enum):
+class RecordType(StrEnum):
     GENE = "gene"
     PSEUDOGENE = "pseudogene"
     PREDICTED_GENE = "predicted_gene"
@@ -35,18 +35,18 @@ class RecordType(str, Enum):
     CHILD = "child"
 
 
-class NodeDisposition(str, Enum):
+class NodeDisposition(StrEnum):
     KNOWN = "known"
     PREDICTED = "predicted"
     UNRESOLVED = "unresolved"
 
 
-class EdgeType(str, Enum):
+class EdgeType(StrEnum):
     PARENT = "parent"
     CHILD = "child"
 
 
-class AttrKey(str, Enum):
+class AttrKey(StrEnum):
     ID = "ID"
     NAME = "Name"
     PARENT = "Parent"
@@ -57,3 +57,31 @@ class AttrKey(str, Enum):
     ISOFORMS = "Isoforms"
     DISPOSITION = "disposition"
     EXPANDED = "Expanded"
+
+
+class ShortReadCode(StrEnum):
+    CHROM = "C"
+    DEPTH = "D"
+    READ = "R"
+    JUNCTION = "J"
+    SPLICE = "S"
+
+
+class JunctionCode(StrEnum):
+    KNOWN = "K"
+    UNKNOWN = "U"
+    PREDICTED = "P"
+    UNLABELED = ""
+
+
+class SamHeaderTag(StrEnum):
+    HD = "HD"
+    LN = "LN"
+    SN = "SN"
+    SO = "SO"
+    SQ = "SQ"
+    VN = "VN"
+
+
+class SamHeaderLine(StrEnum):
+    SQ = "@SQ"
