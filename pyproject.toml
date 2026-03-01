@@ -92,11 +92,6 @@ ignore = [
 "loguru".msg = "Use structlog for SGN logging."
 "requests".msg = "Use httpx (async-first) for outbound HTTP."
 
-[tool.ruff.lint.per-file-ignores]
-# Legacy extraction slices are landed with behavior-parity priority before
-# broad style normalization.
-"SpliceGrapher/SpliceGraph.py" = ["E", "F"]
-
 [tool.mypy]
 python_version = "3.11"
 ignore_missing_imports = true

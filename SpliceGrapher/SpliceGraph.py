@@ -264,7 +264,8 @@ def detectAltAcceptor(n, nodes, edges):
     #  - Get the set of nodes flanking edges that the node contains (retained introns)
     #  - Get the set of all nodes that overlap parents of the given one (other retained introns)
     #  - Subtract those overlapping parents from the first set
-    #  - For those that remain, if any have acceptor sites different from this one, mark it as an alternate acceptor
+    #  - For those that remain, if any have acceptor sites different from
+    #    this one, mark it as an alternate acceptor
     if not n.parents:
         return
     allOverlaps = set([o for o in nodes if o.parents and overlap(o, n)])
@@ -340,9 +341,11 @@ def detectAltDonor(n, nodes, edges, verbose=False):
     # Inference rules:
     #  - Establish set of all nodes that overlap the given one
     #  - Get the set of nodes flanking edges that the node contains (retained introns)
-    #  - Get the set of all nodes that overlap all children of the given one (other retained introns)
+    #  - Get the set of all nodes that overlap all children of the given one
+    #    (other retained introns)
     #  - Subtract those overlapping children from the first set
-    #  - For those that remain, if any have acceptor sites different from this one, mark it as an alternate acceptor
+    #  - For those that remain, if any have acceptor sites different from
+    #    this one, mark it as an alternate acceptor
     if not n.children:
         return
     allOverlaps = set([o for o in nodes if o.children and overlap(o, n)])
@@ -1087,7 +1090,8 @@ class SpliceGraph(object):
 
         :Parameters:
            'name'       - gene name to associate with the graph
-           'chromosome' - chromosome/scaffold name to associate with the graph (GFF format requirement)
+           'chromosome' - chromosome/scaffold name to associate with the
+                          graph (GFF format requirement)
            'strand'     - strand associated with the graph
         """
         self.chromosome = chromosome
@@ -1535,7 +1539,7 @@ class SpliceGraph(object):
             updateRoot(other, self)
             updateLeaf(other, self)
 
-        result = SpliceGraph(newName, self.chromosome, merged_strand)
+        result = SpliceGraph(newName, self.chromosome, strand)
         allNodes = self.resolvedNodes() + other.resolvedNodes()
         for node in allNodes:
             newNode = result.addNode(next(idgen), node.minpos, node.maxpos)
