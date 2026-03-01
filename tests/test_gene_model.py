@@ -5,6 +5,8 @@ from pathlib import Path
 
 import pytest
 
+from SpliceGrapher.core.enums import RecordType
+from SpliceGrapher.formats import GeneModel as gm
 from SpliceGrapher.formats.GeneModel import Exon, Gene, GeneModel, featureSearch
 
 
@@ -69,3 +71,19 @@ def test_load_gene_model_rejects_unknown_record_type() -> None:
 
     with pytest.raises(ValueError):
         model.loadGeneModel(records)
+
+
+def test_gene_model_record_type_constants_use_enum_members() -> None:
+    assert gm.CDS_TYPE is RecordType.CDS
+    assert gm.CHR_TYPE is RecordType.CHROMOSOME
+    assert gm.EXON_TYPE is RecordType.EXON
+    assert gm.GENE_TYPE is RecordType.GENE
+    assert gm.MRNA_TYPE is RecordType.MRNA
+    assert gm.PSEUDOGENE_TYPE is RecordType.PSEUDOGENE
+    assert gm.PSEUDOEXON_TYPE is RecordType.PSEUDOGENIC_EXON
+
+
+def test_gene_model_record_type_collections_are_enum_backed() -> None:
+    assert all(isinstance(item, RecordType) for item in gm.KNOWN_RECTYPES)
+    assert all(isinstance(item, RecordType) for item in gm.IGNORE_RECTYPES)
+    assert all(isinstance(item, RecordType) for item in gm.CDS_TYPES)
