@@ -5,6 +5,9 @@ import subprocess
 import sys
 
 from SpliceGrapher.shared.format_utils import time_string
+from SpliceGrapher.shared.logging_utils import get_logger
+
+LOGGER = get_logger(__name__)
 
 
 def getAttribute(key, default, **args):
@@ -25,6 +28,7 @@ def idFactory(pfx="", initial=1):
 
 def logMessage(s, logstream=None):
     """Allows log messages to be output both to stderr and a log file."""
+    LOGGER.info("process_message", message=s.rstrip("\n"))
     sys.stderr.write(s)
     if logstream:
         logstream.write(s)
@@ -37,6 +41,7 @@ def runCommand(s, **args):
     exitOnError = getAttribute("exitOnError", True, **args)
     stderr = getAttribute("stderr", None, **args)
     stdout = getAttribute("stdout", None, **args)
+    LOGGER.info("command_started", command=s, debug=debug)
     message = "    " + time_string(f"{s}\n")
     sys.stderr.write(message)
     if logstream:
@@ -54,10 +59,12 @@ def runCommand(s, **args):
         )
 
     if exitOnError and retcode < 0:
+        LOGGER.error("command_failed", command=s, return_code=retcode)
         raise Exception("Error running command: returned %d signal\n%s" % (retcode, s))
 
 
 def writeStartupMessage():
     """Standardized startup message for all scripts."""
     base = os.path.basename(sys.argv[0])
+    LOGGER.info("startup", script=base)
     sys.stderr.write(time_string(f"{base} Started\n"))
