@@ -6,7 +6,8 @@ import os
 from sys import maxsize as MAXINT
 
 from SpliceGrapher.shared.file_utils import ez_open
-from SpliceGrapher.shared.utils import ProgressIndicator, getAttribute, idFactory
+from SpliceGrapher.shared.process_utils import getAttribute, idFactory
+from SpliceGrapher.shared.progress import ProgressIndicator
 
 #################################################
 #  Constants
