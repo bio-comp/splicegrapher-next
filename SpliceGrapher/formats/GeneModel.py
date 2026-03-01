@@ -166,8 +166,8 @@ class Chromosome(object):
 
     def update(self, feature):
         """
-        Many species do not have 'chromosome' entries in their annotations, so we must infer the chromosome
-        boundaries from the features found therein.
+        Many species do not have 'chromosome' entries in their annotations,
+        so we must infer chromosome boundaries from observed features.
         """
         if feature.chromosome.lower() != self.name.lower():
             raise ValueError(
@@ -240,7 +240,7 @@ def featureSearch(features, query, lo=0, hi=None):
         else:
             return features[hi]
     else:
-        midpt = (lo + hi) / 2
+        midpt = (lo + hi) // 2
         if features[midpt].minpos <= query.minpos:
             return featureSearch(features, query, midpt, hi)
         elif features[midpt].maxpos >= query.maxpos:
@@ -544,14 +544,14 @@ class CDS(Exon):
         self.parents = []
 
     def __cmp__(self, o):
-        """Special for CDS records, as two records may be the same in other regards but different types."""
+        """Compare CDS records, including feature type for tied intervals."""
         result = BaseFeature.__cmp__(self, o)
         if result != 0:
             return result
         return (self.featureType > o.featureType) - (self.featureType < o.featureType)
 
     def __eq__(self, o):
-        """Special for CDS records, as two records may have the same locations but different types."""
+        """Compare CDS equality by type and genomic location."""
         return (
             self.featureType == o.featureType
             and self.minpos == o.minpos
@@ -1144,7 +1144,7 @@ class GeneModel(object):
         self.sorted = {}
 
         if gffPath:  # Load gene models from a file
-            if type(gffPath) == str and not os.path.exists(gffPath):
+            if isinstance(gffPath, str) and not os.path.exists(gffPath):
                 raise ValueError("Gene model file not found: %s" % gffPath)
 
             self.loadGeneModel(gffPath, **args)
@@ -1190,7 +1190,7 @@ class GeneModel(object):
                     return (gene, gene)
             return (None, None)
         else:
-            midpt = (hi + lo) / 2
+            midpt = (hi + lo) // 2
             midGene = geneList[midpt]
             if midGene.contains(loc, midGene.strand):
                 return (midGene, midGene)
@@ -1404,7 +1404,9 @@ class GeneModel(object):
         def getSubnames(fullString, d):
             parts = fullString.split(d)
             result = []
-            # most-to-least specific: 'a-b-c-d' --> ['a-b-c', 'a-b', 'a'] or 'a,b,c' --> ['a,b', 'a']
+            # most-to-least specific:
+            # 'a-b-c-d' -> ['a-b-c', 'a-b', 'a']
+            # 'a,b,c' -> ['a,b', 'a']
             for i in range(len(parts) - 1, 0, -1):
                 result.append(d.join(parts[:i]))
             return result
@@ -1591,7 +1593,7 @@ class GeneModel(object):
                         "line %d: %s record with unknown strand" % (lineCtr, recType)
                     )
 
-                if not chrName in self.model:
+                if chrName not in self.model:
                     self.model[chrName] = {}
                     self.addChromosome(1, endPos, chrName)
 
@@ -1681,7 +1683,7 @@ class GeneModel(object):
                         % (lineCtr, chrName, ",".join(self.model.keys()))
                     )
 
-                if not ID_FIELD in annots:
+                if ID_FIELD not in annots:
                     conditionalException("line %d: mRNA with missing ID" % lineCtr)
 
                 id = annots[ID_FIELD].upper()
@@ -1809,7 +1811,8 @@ class GeneModel(object):
         if verbose:
             if geneCount > 0:
                 sys.stderr.write(
-                    "Loaded %s genes with %s isoforms, %s exons (avg. %.1f/gene), %s mRNA, %s CDS (avg. %.1f/gene)\n"
+                    "Loaded %s genes with %s isoforms, %s exons (avg. %.1f/gene), "
+                    "%s mRNA, %s CDS (avg. %.1f/gene)\n"
                     % (
                         comma_format(geneCount),
                         comma_format(isoCount),
@@ -1844,10 +1847,13 @@ class GeneModel(object):
         geneSubset = getAttribute("geneSet", None, **args)
         verbose = getAttribute("verbose", False, **args)
 
-        outStream = open(gffPath, "w") if type(gffPath) == type("") else gffPath
+        outStream = open(gffPath, "w") if isinstance(gffPath, str) else gffPath
         chromList = sorted(self.allChr.keys())
         indicator = ProgressIndicator(10000, verbose=verbose)
         for c in chromList:
+            chrom = self.getChromosome(c)
+            if chrom is None:
+                continue
             outStream.write("%s\n" % chrom.gffString())
             genes = self.getGeneRecords(c, geneFilter)
             if geneSubset:
@@ -1867,7 +1873,6 @@ class GeneModel(object):
         chromList = sorted(self.allChr.keys())
         indicator = ProgressIndicator(10000, verbose=verbose)
         for c in chromList:
-            chrom = self.getChromosome(c)
             genes = self.getGeneRecords(c, geneFilter)
             genes.sort(key=geneSortKey)
             for g in genes:

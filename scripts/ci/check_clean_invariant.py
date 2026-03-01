@@ -9,7 +9,6 @@ from pathlib import Path, PurePosixPath
 
 BASELINE_PER_FILE_IGNORES: dict[str, set[str]] = {
     "SpliceGrapher/SpliceGraph.py": {"E", "F"},
-    "SpliceGrapher/formats/GeneModel.py": {"E", "F", "W"},
     "SpliceGrapher/formats/alignment_io.py": {"E", "F", "W"},
     "SpliceGrapher/formats/fasta.py": {"E", "F", "W"},
     "SpliceGrapher/shared/ShortRead.py": {"E", "F", "W"},
