@@ -12,25 +12,25 @@ from SpliceGrapher.core.enum_coercion import coerce_record_type, coerce_strand
 from SpliceGrapher.core.enums import AttrKey, RecordType, Strand
 from SpliceGrapher.shared.utils import ProgressIndicator, comma_format, ez_open, getAttribute
 
-# GFF record types
-CDS_TYPE = RecordType.CDS.value
-CHR_TYPE = RecordType.CHROMOSOME.value
-EXON_TYPE = RecordType.EXON.value
-FP_UTR_TYPE = RecordType.FIVE_PRIME_UTR.value
-GENE_TYPE = RecordType.GENE.value
-INTRON_TYPE = RecordType.INTRON.value
-MRNA_TYPE = RecordType.MRNA.value
-MRNA_TE_TYPE = RecordType.MRNA_TE_GENE.value
-NONUNIQUE_TYPE = RecordType.NONUNIQUE.value
-PROTEIN_RECORD = RecordType.PROTEIN.value
-PREDCDS_TYPE = RecordType.CDS_PREDICTED.value
-PREDGENE_TYPE = RecordType.PREDICTED_GENE.value
-TP_UTR_TYPE = RecordType.THREE_PRIME_UTR.value
-TRANS_ELE_TYPE = RecordType.TRANS_ELE_GENE.value
+# GFF record types (enum-backed, str-compatible)
+CDS_TYPE = RecordType.CDS
+CHR_TYPE = RecordType.CHROMOSOME
+EXON_TYPE = RecordType.EXON
+FP_UTR_TYPE = RecordType.FIVE_PRIME_UTR
+GENE_TYPE = RecordType.GENE
+INTRON_TYPE = RecordType.INTRON
+MRNA_TYPE = RecordType.MRNA
+MRNA_TE_TYPE = RecordType.MRNA_TE_GENE
+NONUNIQUE_TYPE = RecordType.NONUNIQUE
+PROTEIN_RECORD = RecordType.PROTEIN
+PREDCDS_TYPE = RecordType.CDS_PREDICTED
+PREDGENE_TYPE = RecordType.PREDICTED_GENE
+TP_UTR_TYPE = RecordType.THREE_PRIME_UTR
+TRANS_ELE_TYPE = RecordType.TRANS_ELE_GENE
 
-PSEUDOGENE_TYPE = RecordType.PSEUDOGENE.value
-PSEUDOTRANS_TYPE = RecordType.PSEUDOGENIC_TRANSCRIPT.value
-PSEUDOEXON_TYPE = RecordType.PSEUDOGENIC_EXON.value
+PSEUDOGENE_TYPE = RecordType.PSEUDOGENE
+PSEUDOTRANS_TYPE = RecordType.PSEUDOGENIC_TRANSCRIPT
+PSEUDOEXON_TYPE = RecordType.PSEUDOGENIC_EXON
 
 KNOWN_RECTYPES = [
     CDS_TYPE,
