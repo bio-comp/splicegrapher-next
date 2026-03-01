@@ -8,27 +8,29 @@ import os
 import sys
 from urllib.parse import unquote
 
+from SpliceGrapher.core.enum_coercion import coerce_record_type, coerce_strand
+from SpliceGrapher.core.enums import AttrKey, RecordType, Strand
 from SpliceGrapher.shared.utils import ProgressIndicator, comma_format, ez_open, getAttribute
 
 # GFF record types
-CDS_TYPE = "cds"
-CHR_TYPE = "chromosome"
-EXON_TYPE = "exon"
-FP_UTR_TYPE = "five_prime_utr"
-GENE_TYPE = "gene"
-INTRON_TYPE = "intron"
-MRNA_TYPE = "mrna"
-MRNA_TE_TYPE = "mRNA_TE_gene"
-NONUNIQUE_TYPE = "nonunique"
-PROTEIN_RECORD = "protein"
-PREDCDS_TYPE = "cds_predicted"
-PREDGENE_TYPE = "predicted_gene"
-TP_UTR_TYPE = "three_prime_utr"
-TRANS_ELE_TYPE = "transposable_element_gene"
+CDS_TYPE = RecordType.CDS.value
+CHR_TYPE = RecordType.CHROMOSOME.value
+EXON_TYPE = RecordType.EXON.value
+FP_UTR_TYPE = RecordType.FIVE_PRIME_UTR.value
+GENE_TYPE = RecordType.GENE.value
+INTRON_TYPE = RecordType.INTRON.value
+MRNA_TYPE = RecordType.MRNA.value
+MRNA_TE_TYPE = RecordType.MRNA_TE_GENE.value
+NONUNIQUE_TYPE = RecordType.NONUNIQUE.value
+PROTEIN_RECORD = RecordType.PROTEIN.value
+PREDCDS_TYPE = RecordType.CDS_PREDICTED.value
+PREDGENE_TYPE = RecordType.PREDICTED_GENE.value
+TP_UTR_TYPE = RecordType.THREE_PRIME_UTR.value
+TRANS_ELE_TYPE = RecordType.TRANS_ELE_GENE.value
 
-PSEUDOGENE_TYPE = "pseudogene"
-PSEUDOTRANS_TYPE = "pseudogenic_transcript"
-PSEUDOEXON_TYPE = "pseudogenic_exon"
+PSEUDOGENE_TYPE = RecordType.PSEUDOGENE.value
+PSEUDOTRANS_TYPE = RecordType.PSEUDOGENIC_TRANSCRIPT.value
+PSEUDOEXON_TYPE = RecordType.PSEUDOGENIC_EXON.value
 
 KNOWN_RECTYPES = [
     CDS_TYPE,
@@ -70,10 +72,10 @@ RECTYPE_MAP[PREDCDS_TYPE] = CDS_TYPE
 ISOFORM_TYPE = "isoform"
 
 # Annotation fields:
-ID_FIELD = "ID"
-NAME_FIELD = "Name"
-NOTE_FIELD = "Note"
-PARENT_FIELD = "Parent"
+ID_FIELD = AttrKey.ID.value
+NAME_FIELD = AttrKey.NAME.value
+NOTE_FIELD = AttrKey.NOTE.value
+PARENT_FIELD = AttrKey.PARENT.value
 
 # There seems to be no consensus about how these tags are used in UCSC, ENSEMBL
 # and other forms of gene models, so we must try each kind:
@@ -85,7 +87,7 @@ GFF_ID = "SpliceGrapher"
 MAX_BAD_LINES = 3
 
 # Some files contain '.' for an unassigned strand
-VALID_STRANDS = ["-", "+", "."]
+VALID_STRANDS = [Strand.MINUS.value, Strand.PLUS.value, Strand.UNKNOWN.value]
 
 FORM_DELIMITERS = [".", "-", "_", ","]
 
@@ -1554,16 +1556,20 @@ class GeneModel(object):
             if chromosomes and chrName not in chromosomes:
                 continue
 
-            # Try to map record types to known types, but default to string if necessary
-            recType = parts[2].lower()
+            # Convert input record type into a known enum-backed domain and map
+            # aliases (e.g. predicted_gene -> gene) before processing.
             try:
-                recType = RECTYPE_MAP[recType]
-            except KeyError:
-                pass
+                recType = coerce_record_type(parts[2].lower()).value
+            except ValueError as exc:
+                raise ValueError("line %d: unknown record type '%s'" % (lineCtr, parts[2])) from exc
+            recType = RECTYPE_MAP.get(recType, recType)
 
             startPos = int(parts[3])
             endPos = int(parts[4])
-            strand = parts[6]
+            try:
+                strand = coerce_strand(parts[6]).value
+            except ValueError as exc:
+                raise ValueError("line %d: unknown strand '%s'" % (lineCtr, parts[6])) from exc
 
             # Track all known record types and which were stored
             self.foundTypes[recType] = recType in KNOWN_RECTYPES and recType not in IGNORE_RECTYPES

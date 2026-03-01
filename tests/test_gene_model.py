@@ -3,6 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
+import pytest
+
 from SpliceGrapher.formats.GeneModel import Exon, Gene, GeneModel, featureSearch
 
 
@@ -59,3 +61,11 @@ def test_write_gff_writes_chromosome_records(tmp_path: Path) -> None:
     lines = gff_path.read_text(encoding="utf-8").splitlines()
     expected_prefix = "Chr1\tSpliceGrapher\tchromosome\t1\t100\t.\t.\t.\tID=Chr1;Name=Chr1"
     assert lines[0].startswith(expected_prefix)
+
+
+def test_load_gene_model_rejects_unknown_record_type() -> None:
+    model = GeneModel(None)
+    records = ["chr1\tsource\tunknown_type\t1\t10\t.\t+\t.\tID=U1;Name=U1"]
+
+    with pytest.raises(ValueError):
+        model.loadGeneModel(records)
