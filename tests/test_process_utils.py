@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import io
 import subprocess
 from typing import Any
 
@@ -45,3 +46,37 @@ def test_run_command_preserves_explicit_stream_overrides(monkeypatch) -> None:
 
     assert captured["stdout"] is subprocess.PIPE
     assert captured["stderr"] is subprocess.PIPE
+
+
+def test_log_message_emits_structured_event_and_mirrors_logstream(monkeypatch) -> None:
+    captured: list[tuple[str, dict[str, Any]]] = []
+
+    class StubLogger:
+        def info(self, event: str, **kwargs: Any) -> None:
+            captured.append((event, kwargs))
+
+    monkeypatch.setattr(process_utils, "LOGGER", StubLogger())
+    logstream = io.StringIO()
+
+    process_utils.logMessage("hello world\n", logstream=logstream)
+
+    assert captured == [("process_message", {"message": "hello world"})]
+    assert logstream.getvalue() == "hello world\n"
+
+
+def test_write_startup_message_emits_structured_event(monkeypatch) -> None:
+    captured: list[tuple[str, dict[str, Any]]] = []
+
+    class StubLogger:
+        def info(self, event: str, **kwargs: Any) -> None:
+            captured.append((event, kwargs))
+
+    monkeypatch.setattr(process_utils, "LOGGER", StubLogger())
+    monkeypatch.setattr(process_utils.sys, "argv", ["/tmp/example_script.py"])
+
+    process_utils.writeStartupMessage()
+
+    assert len(captured) == 1
+    event, payload = captured[0]
+    assert event == "startup"
+    assert payload["script"] == "example_script.py"

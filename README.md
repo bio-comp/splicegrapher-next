@@ -121,7 +121,19 @@ for _ in range(5000):
 indicator.finish()
 ```
 
-Logging policy remains tracked separately in issue `#9` (structlog adoption).
+## Logging Policy (structlog)
+
+Structured logging is canonical in SGN. New/modified runtime modules should use
+`structlog` event logging, not stdlib `logging`, `loguru`, or ad-hoc `print`/`stderr`
+output for operational messages.
+
+Baseline bootstrap helpers now live in `SpliceGrapher/shared/logging_utils.py`:
+
+- `configure_logging()` for one-time structlog setup
+- `get_logger(__name__)` for module-level logger creation
+
+Policy enforcement for touched code is configured in `pyproject.toml` via Ruff
+`banned-api` rules.
 
 ## Conda / Mamba / Miniconda / Bioconda-Friendly Guidance
 
