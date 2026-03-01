@@ -3,6 +3,8 @@ Stores gene annotation information from a GFF3 annotation
 file and provides methods for searching on the data.
 """
 
+from __future__ import annotations
+
 # TRYING A NEW WAY TO IDENTIFY GENES:
 import bisect
 import os
@@ -101,12 +103,16 @@ def defaultGeneFilter(g):
 
 def dictToGFF(d):
     """Returns a string representation of a dictionary based on the GFF3 annotation format."""
-    return ";".join(["{}={}".format(k, v) for k, v in sorted(d.items()) if k != "parent"])
+    return ";".join(
+        ["{}={}".format(k, v) for k, v in sorted(d.items()) if k != "parent"]
+    )
 
 
 def dictToGTF(d):
     """Returns a string representation of a dictionary based on the GTF annotation format."""
-    return "; ".join(['{} "{}"'.format(k, v) for k, v in sorted(d.items()) if k != "parent"])
+    return "; ".join(
+        ['{} "{}"'.format(k, v) for k, v in sorted(d.items()) if k != "parent"]
+    )
 
 
 def cdsFactory(recType, startPos, endPos, chrName, strand, attr=None):
@@ -160,7 +166,9 @@ class Chromosome(object):
         """
         if feature.chromosome.lower() != self.name.lower():
             raise ValueError(
-                "Cannot use feature from {} to update {}".format(feature.chromosome, self.name)
+                "Cannot use feature from {} to update {}".format(
+                    feature.chromosome, self.name
+                )
             )
         self.minpos = min(self.minpos, feature.minpos)
         self.maxpos = max(self.maxpos, feature.maxpos)
@@ -360,7 +368,9 @@ class BaseFeature(object):
 
 class Exon(BaseFeature):
     def __init__(self, start, end, chromosome, strand, attr=None):
-        BaseFeature.__init__(self, RecordType.EXON, start, end, chromosome, strand, attr)
+        BaseFeature.__init__(
+            self, RecordType.EXON, start, end, chromosome, strand, attr
+        )
         self.parents = []
 
     def __str__(self):
@@ -462,8 +472,8 @@ class Isoform(BaseFeature):
     def getFeatureList(self, featureType):
         return [f for f in self.features if f.featureType == featureType]
 
-    def gffStrings(self):
-        result = []
+    def gffStrings(self) -> list[str]:
+        result: list[str] = []
         # Attributes depend on where data originated
         gffAttr = {PARENT_FIELD: self.id}
         gtfAttr = {
@@ -479,7 +489,7 @@ class Isoform(BaseFeature):
                 result.append(exon.gffString(altAttributes=gffAttr))
         return result
 
-    def gtfStrings(self):
+    def gtfStrings(self) -> list[str]:
         result = []
         # Always sort in ascending order by position
         exonList = sorted(self.exons, key=featureSortKey)
@@ -553,13 +563,17 @@ class CDS(Exon):
 # We treat UTR records the same way as CDS records
 class FP_UTR(CDS):
     def __init__(self, start, end, chromosome, strand, attr=None):
-        BaseFeature.__init__(self, RecordType.FIVE_PRIME_UTR, start, end, chromosome, strand, attr)
+        BaseFeature.__init__(
+            self, RecordType.FIVE_PRIME_UTR, start, end, chromosome, strand, attr
+        )
         self.parents = []
 
 
 class TP_UTR(CDS):
     def __init__(self, start, end, chromosome, strand, attr=None):
-        BaseFeature.__init__(self, RecordType.THREE_PRIME_UTR, start, end, chromosome, strand, attr)
+        BaseFeature.__init__(
+            self, RecordType.THREE_PRIME_UTR, start, end, chromosome, strand, attr
+        )
         self.parents = []
 
 
@@ -570,7 +584,9 @@ class mRNA(Isoform):
     """
 
     def __init__(self, id, start, end, chromosome, strand, attr=None):
-        BaseFeature.__init__(self, RecordType.MRNA, start, end, chromosome, strand, attr)
+        BaseFeature.__init__(
+            self, RecordType.MRNA, start, end, chromosome, strand, attr
+        )
         self.id = id
         self.exons = []
         self.features = []
@@ -639,7 +655,9 @@ class mRNA(Isoform):
                 and c.featureType == RecordType.CDS
             ):
                 self.start_codon = (
-                    (c.minpos, c.minpos + 2) if self.strand == "+" else (c.maxpos - 2, c.maxpos)
+                    (c.minpos, c.minpos + 2)
+                    if self.strand == "+"
+                    else (c.maxpos - 2, c.maxpos)
                 )
             elif (
                 not self.end_codon
@@ -669,13 +687,17 @@ class mRNA(Isoform):
         if not self.start_codon:
             c = self.cds[0]
             self.start_codon = (
-                (c.minpos, c.minpos + 2) if self.strand == "+" else (c.maxpos - 2, c.maxpos)
+                (c.minpos, c.minpos + 2)
+                if self.strand == "+"
+                else (c.maxpos - 2, c.maxpos)
             )
 
         if not self.end_codon:
             c = self.cds[-1]
             self.end_codon = (
-                (c.maxpos - 2, c.maxpos) if self.strand == "+" else (c.minpos, c.minpos + 2)
+                (c.maxpos - 2, c.maxpos)
+                if self.strand == "+"
+                else (c.minpos, c.minpos + 2)
             )
 
     def getUTRs(self):
@@ -702,29 +724,41 @@ class mRNA(Isoform):
                 result.append(c.gffString(altAttributes=gffAttr))
         return result
 
-    def gtfStartCodon(self):
+    def gtfStartCodon(self) -> str | None:
         if self.start_codon:
+            if self.parent is None:
+                raise RuntimeError(
+                    "mRNA parent gene is required before writing start_codon"
+                )
             return (
                 f"{self.chromosome}\t{GFF_ID}\tstart_codon\t{self.start_codon[0]}"
                 f"\t{self.start_codon[1]}\t.\t{self.strand}\t.\tgene_id "
                 f'"{self.parent.id}"; transcript_id "{self.id}"'
             )
+        return None
 
-    def gtfStopCodon(self):
+    def gtfStopCodon(self) -> str | None:
         if self.end_codon:
+            if self.parent is None:
+                raise RuntimeError(
+                    "mRNA parent gene is required before writing stop_codon"
+                )
             return (
                 f"{self.chromosome}\t{GFF_ID}\tstop_codon\t{self.end_codon[0]}"
                 f"\t{self.end_codon[1]}\t.\t{self.strand}\t.\tgene_id "
                 f'"{self.parent.id}"; transcript_id "{self.id}"'
             )
+        return None
 
-    def gtfStrings(self):
+    def gtfStrings(self) -> list[str]:
         """
         Returns GTF strings for all elements of the mRNA transcript, including
         start/stop codon locations.
         """
         result = []
-        codonString = self.gtfStartCodon() if self.strand == "+" else self.gtfStopCodon()
+        codonString = (
+            self.gtfStartCodon() if self.strand == "+" else self.gtfStopCodon()
+        )
         if codonString:
             result.append(codonString)
 
@@ -734,7 +768,9 @@ class mRNA(Isoform):
             c = cdsList[i]
             result.append(c.gtfString(self.id, self.parent, i + 1))
 
-        codonString = self.gtfStopCodon() if self.strand == "+" else self.gtfStartCodon()
+        codonString = (
+            self.gtfStopCodon() if self.strand == "+" else self.gtfStartCodon()
+        )
         if codonString:
             result.append(codonString)
 
@@ -762,7 +798,9 @@ class mRNA(Isoform):
                 prev = result[-1]
                 result[-1] = Exon(prev.start(), cds.end(), self.chromosome, self.strand)
             else:
-                result.append(Exon(cds.start(), cds.end(), self.chromosome, self.strand))
+                result.append(
+                    Exon(cds.start(), cds.end(), self.chromosome, self.strand)
+                )
         # Revise feature types to indicate CDS instead of exon
         for e in result:
             e.featureType = RecordType.CDS
@@ -786,7 +824,9 @@ class mRNA(Isoform):
 
 class Gene(BaseFeature):
     def __init__(self, id, note, start, end, chromosome, strand, name=None, attr=None):
-        BaseFeature.__init__(self, RecordType.GENE, start, end, chromosome, strand, attr)
+        BaseFeature.__init__(
+            self, RecordType.GENE, start, end, chromosome, strand, attr
+        )
         self.id = id
         self.name = name if name is not None else id
         self.note = note
@@ -970,7 +1010,12 @@ class Gene(BaseFeature):
                 allExons.sort(key=featureSortKey, reverse=(self.strand == "-"))
                 stringList.append(self.mrna[k].gffString())
                 gffAttr = {PARENT_FIELD: k}
-                gtfAttr = {PARENT_FIELD: k, GTF_TRANSCRIPT: k, GTF_TRANSNAME: k, GTF_PROTEIN_ID: k}
+                gtfAttr = {
+                    PARENT_FIELD: k,
+                    GTF_TRANSCRIPT: k,
+                    GTF_TRANSNAME: k,
+                    GTF_PROTEIN_ID: k,
+                }
                 # stringList += [e.gffString(altAttributes={PARENT_FIELD:k}) for e in allExons]
                 for e in allExons:
                     if GTF_TRANSCRIPT in e.attributes:
@@ -985,7 +1030,7 @@ class Gene(BaseFeature):
 
         return "\n".join(stringList)
 
-    def gtfStrings(self):
+    def gtfStrings(self) -> str:
         """Returns a GTF string representation of the gene record plus
         all elements within the gene."""
         stringList = []
@@ -1049,7 +1094,11 @@ class Gene(BaseFeature):
         stored = set([(e.minpos, e.maxpos) for e in tmpset])
         for mid in self.mrna.keys():
             tmpset.update(
-                [e for e in self.mrna[mid].sortedExons() if (e.minpos, e.maxpos) not in stored]
+                [
+                    e
+                    for e in self.mrna[mid].sortedExons()
+                    if (e.minpos, e.maxpos) not in stored
+                ]
             )
 
         result = list(tmpset)
@@ -1073,7 +1122,9 @@ class Gene(BaseFeature):
 
 class PseudoGene(Gene):
     def __init__(self, id, note, start, end, chromosome, strand, name=None, attr=None):
-        BaseFeature.__init__(self, RecordType.PSEUDOGENE, start, end, chromosome, strand, attr)
+        BaseFeature.__init__(
+            self, RecordType.PSEUDOGENE, start, end, chromosome, strand, attr
+        )
         self.id = id
         self.name = name
         self.note = note
@@ -1231,7 +1282,7 @@ class GeneModel(object):
             result[key] = value
         return result
 
-    def getChromosome(self, chrName):
+    def getChromosome(self, chrName: str) -> Chromosome | None:
         """Returns a simple record with basic chromosome information."""
         try:
             return self.allChr[chrName]
@@ -1253,7 +1304,7 @@ class GeneModel(object):
                 result += fList
         return result
 
-    def getGene(self, chrom, geneId):
+    def getGene(self, chrom: str, geneId: str) -> Gene | None:
         """
         Returns a gene from within a chromosome.  The gene will contain
         information on all exons within it.
@@ -1263,7 +1314,7 @@ class GeneModel(object):
         except KeyError:
             return None
 
-    def getGeneByName(self, id):
+    def getGeneByName(self, id: str) -> Gene | None:
         """
         Returns a gene with the given id if it exists.
         """
@@ -1274,7 +1325,9 @@ class GeneModel(object):
                 pass
         return None
 
-    def getGeneFromLocations(self, chrom, startPos, endPos, strand):
+    def getGeneFromLocations(
+        self, chrom: str, startPos: int, endPos: int, strand: str
+    ) -> Gene | None:
         """
         Finds the gene within the given chromosome that contains the given start
         and end positions.  Uses quasi-binary search through the sorted list of genes.
@@ -1283,9 +1336,13 @@ class GeneModel(object):
         try:
             geneList = self.sorted[chrom.lower()][strand]
         except KeyError:
-            raise KeyError(f"Key {chrom.lower()} not found in {','.join(self.sorted.keys())}")
+            raise KeyError(
+                f"Key {chrom.lower()} not found in {','.join(self.sorted.keys())}"
+            )
 
-        (logene, higene) = self.binarySearchGenes(geneList, startPos, 0, len(geneList) - 1)
+        (logene, higene) = self.binarySearchGenes(
+            geneList, startPos, 0, len(geneList) - 1
+        )
 
         if not (logene or higene):
             return None
@@ -1359,14 +1416,16 @@ class GeneModel(object):
             result[g.strand].update(g.donorList())
         return result
 
-    def getParent(self, s, chrom, searchGenes=True, searchmRNA=True):
+    def getParent(
+        self, s: str, chrom: str, searchGenes: bool = True, searchmRNA: bool = True
+    ) -> Gene | mRNA | None:
         """
         Parent identifiers are not stored in a consistent manner.  We may have
         'AT1G01160', 'AT1G01160.1' or '12345.AT1G01160' or possibly something else.
         This method looks for the most specific candidate name to identify a record's parent.
         """
 
-        def getSubnames(fullString, d):
+        def getSubnames(fullString: str, d: str) -> list[str]:
             parts = fullString.split(d)
             result = []
             # most-to-least specific:
@@ -1414,6 +1473,7 @@ class GeneModel(object):
             for c in candidates:
                 if c in self.model[chrom]:
                     return self.model[chrom][c]
+        return None
 
     def getRecordTypes(self):
         """Returns a list of all record types found in the input file."""
@@ -1452,7 +1512,9 @@ class GeneModel(object):
 
         if isinstance(gffRecords, str):
             if verbose:
-                sys.stderr.write("Loading and validating gene models in {}\n".format(gffRecords))
+                sys.stderr.write(
+                    "Loading and validating gene models in {}\n".format(gffRecords)
+                )
             instream = ez_open(gffRecords)
         elif isinstance(gffRecords, (list, set, tuple)):
             if verbose:
@@ -1473,7 +1535,9 @@ class GeneModel(object):
             elif chrParam:
                 chromosomes = [chrParam]
             if verbose:
-                sys.stderr.write("GeneModel loading chromosomes {}\n".format(",".join(chromosomes)))
+                sys.stderr.write(
+                    "GeneModel loading chromosomes {}\n".format(",".join(chromosomes))
+                )
 
         self.model = {}
         self.mRNAforms = {}
@@ -1508,7 +1572,9 @@ class GeneModel(object):
                         "(not enough columns); file may be corrupt\n"
                     )
                 if badLines >= MAX_BAD_LINES:
-                    sys.stderr.write("\nInput GFF file appears to be invalid; aborting.\n")
+                    sys.stderr.write(
+                        "\nInput GFF file appears to be invalid; aborting.\n"
+                    )
                     raise ValueError("Invalid GFF input file")
                 continue
 
@@ -1523,9 +1589,13 @@ class GeneModel(object):
             # Convert input record type into a known enum-backed domain and map
             # aliases (e.g. predicted_gene -> gene) before processing.
             try:
-                recType = coerce_enum(parts[2].lower(), RecordType, field="record_type").value
+                recType = coerce_enum(
+                    parts[2].lower(), RecordType, field="record_type"
+                ).value
             except ValueError as exc:
-                raise ValueError(f"line {lineCtr}: unknown record type '{parts[2]}'") from exc
+                raise ValueError(
+                    f"line {lineCtr}: unknown record type '{parts[2]}'"
+                ) from exc
             recType = RECTYPE_MAP.get(recType, recType)
 
             startPos = int(parts[3])
@@ -1533,10 +1603,14 @@ class GeneModel(object):
             try:
                 strand = coerce_enum(parts[6], Strand, field="strand").value
             except ValueError as exc:
-                raise ValueError(f"line {lineCtr}: unknown strand '{parts[6]}'") from exc
+                raise ValueError(
+                    f"line {lineCtr}: unknown strand '{parts[6]}'"
+                ) from exc
 
             # Track all known record types and which were stored
-            self.foundTypes[recType] = recType in KNOWN_RECTYPES and recType not in IGNORE_RECTYPES
+            self.foundTypes[recType] = (
+                recType in KNOWN_RECTYPES and recType not in IGNORE_RECTYPES
+            )
             if not self.foundTypes[recType]:
                 continue
 
@@ -1546,7 +1620,9 @@ class GeneModel(object):
                 try:
                     gid = annots[ID_FIELD].upper()
                 except KeyError:
-                    raise ValueError(f"line {lineCtr}: {recType} record has no ID field:\n{line}\n")
+                    raise ValueError(
+                        f"line {lineCtr}: {recType} record has no ID field:\n{line}\n"
+                    )
 
                 name = self.getAnnotation(NAME_FIELD, annots, None)
                 if name:
@@ -1557,16 +1633,22 @@ class GeneModel(object):
                     continue
 
                 if strand not in VALID_STRANDS:
-                    conditionalException(f"line {lineCtr}: {recType} record with unknown strand")
+                    conditionalException(
+                        f"line {lineCtr}: {recType} record with unknown strand"
+                    )
 
                 if chrName not in self.model:
                     self.model[chrName] = {}
                     self.addChromosome(1, endPos, chrName)
 
                 if recType == RecordType.PSEUDOGENE:
-                    gene = PseudoGene(gid, note, startPos, endPos, chrName, strand, name, annots)
+                    gene = PseudoGene(
+                        gid, note, startPos, endPos, chrName, strand, name, annots
+                    )
                 else:  # genes and predicted_genes
-                    gene = Gene(gid, note, startPos, endPos, chrName, strand, name, annots)
+                    gene = Gene(
+                        gid, note, startPos, endPos, chrName, strand, name, annots
+                    )
 
                 try:
                     other = self.allGenes[str(gene)]
@@ -1602,7 +1684,15 @@ class GeneModel(object):
                 if not parent:
                     continue
 
-                gene = parent.parent if parent.featureType == RecordType.MRNA else parent
+                if parent.featureType == RecordType.MRNA:
+                    gene = parent.parent
+                    if gene is None:
+                        conditionalException(
+                            f"line {lineCtr}: mRNA parent is missing gene for exon record"
+                        )
+                        continue
+                else:
+                    gene = parent
 
                 # Next get the isoform if it already exists:
                 isoform = None
@@ -1635,8 +1725,14 @@ class GeneModel(object):
 
                 # Must add isoform to gene before adding exon
                 if not isoform:
-                    isoAttr = {PARENT_FIELD: gene.id, NAME_FIELD: isoName, ID_FIELD: isoName}
-                    isoform = Isoform(isoName, startPos, endPos, chrName, strand, attr=isoAttr)
+                    isoAttr = {
+                        PARENT_FIELD: gene.id,
+                        NAME_FIELD: isoName,
+                        ID_FIELD: isoName,
+                    }
+                    isoform = Isoform(
+                        isoName, startPos, endPos, chrName, strand, attr=isoAttr
+                    )
                     isoCount += 1
 
                 exon = Exon(startPos, endPos, chrName, strand, annots)
@@ -1710,6 +1806,17 @@ class GeneModel(object):
                             f"line {lineCtr}: no mRNA {annots[PARENT_FIELD]} found for {recType}\n"
                         )
                     continue
+                if mrna.featureType != RecordType.MRNA:
+                    conditionalException(
+                        f"line {lineCtr}: parent {annots[PARENT_FIELD]} is not an mRNA record"
+                    )
+                    continue
+                gene = mrna.parent
+                if gene is None:
+                    conditionalException(
+                        f"line {lineCtr}: mRNA {mrna.id} is missing a parent gene for CDS record"
+                    )
+                    continue
 
                 if strand in VALID_STRANDS and strand != mrna.strand:
                     conditionalException(
@@ -1721,8 +1828,6 @@ class GeneModel(object):
 
                 cds = cdsFactory(recType, startPos, endPos, chrName, strand, annots)
 
-                if not gene:
-                    conditionalException(f"line {lineCtr}: No gene loaded for CDS record")
                 if gene.addCDS(mrna, cds):
                     cdsCount += 1
 
@@ -1767,7 +1872,9 @@ class GeneModel(object):
 
                 gene = self.model[chrName][parent]
                 try:
-                    gene.addFeature(BaseFeature(recType, startPos, endPos, chrName, strand, annots))
+                    gene.addFeature(
+                        BaseFeature(recType, startPos, endPos, chrName, strand, annots)
+                    )
                 except ValueError as e:
                     conditionalException(f"line {lineCtr}: {e}")
 
