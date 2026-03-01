@@ -16,6 +16,8 @@ from SpliceGrapher.shared.format_utils import (
 def test_comma_format_variants() -> None:
     assert comma_format("1234567") == "1,234,567"
     assert comma_format(8900) == "8,900"
+    assert comma_format(1234.56) == "1,234.56"
+    assert comma_format("1234.56") == "1,234.56"
 
 
 def test_dict_and_list_string() -> None:
@@ -43,9 +45,11 @@ def test_substring_helpers() -> None:
 def test_time_helpers() -> None:
     stamp = timestamp("%Y")
     assert len(stamp) == 4
+    assert timestamp("%z") == "+0000"
 
     message = time_string("hello", format_string="%H:%M:%S")
     assert message.endswith(" hello")
+    assert time_string("utc", format_string="%z").startswith("+0000 ")
 
     newline_message = time_string("world", format_string="%H:%M:%S", trailing_newline=True)
     assert newline_message.endswith(" world\n")
@@ -54,4 +58,7 @@ def test_time_helpers() -> None:
 def test_to_numeric() -> None:
     assert to_numeric("10") == 10
     assert to_numeric("12.5") == 12.5
+    assert to_numeric(" 42 ") == 42
+    assert to_numeric("+3.5") == 3.5
+    assert to_numeric("1e3") == 1000.0
     assert to_numeric("abc") == "abc"
