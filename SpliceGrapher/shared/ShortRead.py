@@ -5,6 +5,7 @@ Module containing classes and methods for handling short-read data.
 import os
 from sys import maxsize as MAXINT
 
+from SpliceGrapher.core.enums import JunctionCode, ShortReadCode
 from SpliceGrapher.shared.file_utils import ez_open
 from SpliceGrapher.shared.process_utils import getAttribute, idFactory
 from SpliceGrapher.shared.progress import ProgressIndicator
@@ -12,13 +13,22 @@ from SpliceGrapher.shared.progress import ProgressIndicator
 #################################################
 #  Constants
 #################################################
-CHROM_CODE = "C"
-DEPTH_CODE = "D"
-KNOWN_CODES = [READ_CODE, JCT_CODE, SPLICE_CODE] = ["R", "J", "S"]
+CHROM_CODE = ShortReadCode.CHROM
+DEPTH_CODE = ShortReadCode.DEPTH
+KNOWN_CODES = [READ_CODE, JCT_CODE, SPLICE_CODE] = [
+    ShortReadCode.READ,
+    ShortReadCode.JUNCTION,
+    ShortReadCode.SPLICE,
+]
 DEPTH_CODES = [CHROM_CODE, DEPTH_CODE, JCT_CODE]
 
 # Splice junction codes:
-SJ_CODES = [KNOWN_JCT, UNKNOWN_JCT, PREDICTED_JCT, UNLABELED_JCT] = ["K", "U", "P", ""]
+SJ_CODES = [KNOWN_JCT, UNKNOWN_JCT, PREDICTED_JCT, UNLABELED_JCT] = [
+    JunctionCode.KNOWN,
+    JunctionCode.UNKNOWN,
+    JunctionCode.PREDICTED,
+    JunctionCode.UNLABELED,
+]
 
 
 #################################################

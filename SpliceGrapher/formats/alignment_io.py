@@ -8,6 +8,7 @@ from sys import maxsize as MAXINT
 import pysam
 import structlog
 
+from SpliceGrapher.core.enums import SamHeaderLine, SamHeaderTag
 from SpliceGrapher.shared.file_utils import ez_open
 from SpliceGrapher.shared.process_utils import getAttribute
 from SpliceGrapher.shared.progress import ProgressIndicator
@@ -20,13 +21,13 @@ from SpliceGrapher.shared.ShortRead import (
 LOGGER = structlog.get_logger(__name__)
 
 # Header tags
-HEADER_HD_TAG = "HD"
-HEADER_LN_TAG = "LN"
-HEADER_SN_TAG = "SN"
-HEADER_SO_TAG = "SO"
-HEADER_SQ_TAG = "SQ"
-HEADER_VN_TAG = "VN"
-HEADER_SQ_LINE = "@SQ"
+HEADER_HD_TAG = SamHeaderTag.HD
+HEADER_LN_TAG = SamHeaderTag.LN
+HEADER_SN_TAG = SamHeaderTag.SN
+HEADER_SO_TAG = SamHeaderTag.SO
+HEADER_SQ_TAG = SamHeaderTag.SQ
+HEADER_VN_TAG = SamHeaderTag.VN
+HEADER_SQ_LINE = SamHeaderLine.SQ
 
 # SAM files have the following tab-delimited columns:
 # Column  Value
