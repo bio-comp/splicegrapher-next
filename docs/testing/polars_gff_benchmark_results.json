@@ -1,0 +1,342 @@
+{
+  "synthetic": {
+    "small": {
+      "ingest": {
+        "gene_model": {
+          "status": "ok",
+          "rows": 500,
+          "mean_seconds": 0.01965047197882086,
+          "max_seconds": 0.02538087498396635,
+          "peak_mebibytes": 0.5528221130371094,
+          "analytics_signature": null
+        },
+        "rows": {
+          "status": "ok",
+          "rows": 500,
+          "mean_seconds": 0.0034313476644456387,
+          "max_seconds": 0.004310459014959633,
+          "peak_mebibytes": 0.4066305160522461,
+          "analytics_signature": null
+        },
+        "polars_df": {
+          "status": "ok",
+          "rows": 500,
+          "mean_seconds": 0.003964402712881565,
+          "max_seconds": 0.004979416960850358,
+          "peak_mebibytes": 0.4065847396850586,
+          "analytics_signature": null
+        }
+      },
+      "end_to_end": {
+        "gene_model": {
+          "status": "ok",
+          "rows": 300,
+          "mean_seconds": 0.018961347018678982,
+          "max_seconds": 0.019425750011578202,
+          "peak_mebibytes": 0.6449785232543945,
+          "analytics_signature": "582a38b8970acc14a4ed6fbe91c987586aa607616fb8a860159d7b3c87ab735e"
+        },
+        "rows": {
+          "status": "ok",
+          "rows": 300,
+          "mean_seconds": 0.007098138681612909,
+          "max_seconds": 0.00844112504273653,
+          "peak_mebibytes": 0.40651607513427734,
+          "analytics_signature": "582a38b8970acc14a4ed6fbe91c987586aa607616fb8a860159d7b3c87ab735e"
+        },
+        "polars_df": {
+          "status": "ok",
+          "rows": 300,
+          "mean_seconds": 0.008121041697449982,
+          "max_seconds": 0.008185458020307124,
+          "peak_mebibytes": 0.4110898971557617,
+          "analytics_signature": "582a38b8970acc14a4ed6fbe91c987586aa607616fb8a860159d7b3c87ab735e"
+        }
+      }
+    },
+    "medium": {
+      "ingest": {
+        "gene_model": {
+          "status": "ok",
+          "rows": 3750,
+          "mean_seconds": 0.13648152797638127,
+          "max_seconds": 0.14178437495138496,
+          "peak_mebibytes": 4.25760555267334,
+          "analytics_signature": null
+        },
+        "rows": {
+          "status": "ok",
+          "rows": 3750,
+          "mean_seconds": 0.02239227764463673,
+          "max_seconds": 0.022468084003776312,
+          "peak_mebibytes": 3.0058975219726562,
+          "analytics_signature": null
+        },
+        "polars_df": {
+          "status": "ok",
+          "rows": 3750,
+          "mean_seconds": 0.026144430002508063,
+          "max_seconds": 0.027002166025340557,
+          "peak_mebibytes": 3.00592041015625,
+          "analytics_signature": null
+        }
+      },
+      "end_to_end": {
+        "gene_model": {
+          "status": "ok",
+          "rows": 2250,
+          "mean_seconds": 0.15657365302710483,
+          "max_seconds": 0.17096433404367417,
+          "peak_mebibytes": 5.296962738037109,
+          "analytics_signature": "220c793f246682bab9ca01e1f62118a610fb5598486ec0037c7e7a1b06e111c1"
+        },
+        "rows": {
+          "status": "ok",
+          "rows": 2250,
+          "mean_seconds": 0.04831026401370764,
+          "max_seconds": 0.04943891707807779,
+          "peak_mebibytes": 3.0285463333129883,
+          "analytics_signature": "220c793f246682bab9ca01e1f62118a610fb5598486ec0037c7e7a1b06e111c1"
+        },
+        "polars_df": {
+          "status": "ok",
+          "rows": 2250,
+          "mean_seconds": 0.06313645831930141,
+          "max_seconds": 0.06369462492875755,
+          "peak_mebibytes": 3.2943010330200195,
+          "analytics_signature": "220c793f246682bab9ca01e1f62118a610fb5598486ec0037c7e7a1b06e111c1"
+        }
+      }
+    },
+    "large": {
+      "ingest": {
+        "gene_model": {
+          "status": "ok",
+          "rows": 15000,
+          "mean_seconds": 0.5577873469640812,
+          "max_seconds": 0.5909064579755068,
+          "peak_mebibytes": 17.282137870788574,
+          "analytics_signature": null
+        },
+        "rows": {
+          "status": "ok",
+          "rows": 15000,
+          "mean_seconds": 0.090896666670839,
+          "max_seconds": 0.09128024999517947,
+          "peak_mebibytes": 12.034989356994629,
+          "analytics_signature": null
+        },
+        "polars_df": {
+          "status": "ok",
+          "rows": 15000,
+          "mean_seconds": 0.10894900001585484,
+          "max_seconds": 0.11054487503133714,
+          "peak_mebibytes": 12.034989356994629,
+          "analytics_signature": null
+        }
+      },
+      "end_to_end": {
+        "gene_model": {
+          "status": "ok",
+          "rows": 9000,
+          "mean_seconds": 0.6609913052913422,
+          "max_seconds": 0.6797455829801038,
+          "peak_mebibytes": 22.778586387634277,
+          "analytics_signature": "c06fd61c65e95953d423e2a1a694beb14db7d5a36b9ba0541e93d5c5b4d5c3dc"
+        },
+        "rows": {
+          "status": "ok",
+          "rows": 9000,
+          "mean_seconds": 0.21792238900282732,
+          "max_seconds": 0.23326262494083494,
+          "peak_mebibytes": 12.627484321594238,
+          "analytics_signature": "c06fd61c65e95953d423e2a1a694beb14db7d5a36b9ba0541e93d5c5b4d5c3dc"
+        },
+        "polars_df": {
+          "status": "ok",
+          "rows": 9000,
+          "mean_seconds": 0.27766454200415563,
+          "max_seconds": 0.2836833340115845,
+          "peak_mebibytes": 14.20629596710205,
+          "analytics_signature": "c06fd61c65e95953d423e2a1a694beb14db7d5a36b9ba0541e93d5c5b4d5c3dc"
+        }
+      }
+    }
+  },
+  "real": {
+    "at5": {
+      "ingest": {
+        "gene_model": {
+          "status": "ok",
+          "rows": 27,
+          "mean_seconds": 0.0009563750354573131,
+          "max_seconds": 0.000974416034296155,
+          "peak_mebibytes": 0.0357208251953125,
+          "analytics_signature": null
+        },
+        "rows": {
+          "status": "ok",
+          "rows": 27,
+          "mean_seconds": 0.0001735413291802009,
+          "max_seconds": 0.00017829099670052528,
+          "peak_mebibytes": 0.03313732147216797,
+          "analytics_signature": null
+        },
+        "polars_df": {
+          "status": "ok",
+          "rows": 27,
+          "mean_seconds": 0.00022102772103001675,
+          "max_seconds": 0.00022770802024751902,
+          "peak_mebibytes": 0.03316020965576172,
+          "analytics_signature": null
+        }
+      },
+      "end_to_end": {
+        "gene_model": {
+          "status": "ok",
+          "rows": 11,
+          "mean_seconds": 0.0010901389565939705,
+          "max_seconds": 0.0010946670081466436,
+          "peak_mebibytes": 0.03590106964111328,
+          "analytics_signature": "e88fb367e4e1dadc02e855f2cfa723c82597c83602644c81a4d2f57ecdd91047"
+        },
+        "rows": {
+          "status": "ok",
+          "rows": 11,
+          "mean_seconds": 0.0003169723010311524,
+          "max_seconds": 0.0003313340712338686,
+          "peak_mebibytes": 0.03313732147216797,
+          "analytics_signature": "3b686ff65a35b2d9524a865726643561aedb768d0c4e3928bfb9427e35993191"
+        },
+        "polars_df": {
+          "status": "ok",
+          "rows": 11,
+          "mean_seconds": 0.0004798193695023656,
+          "max_seconds": 0.0004887500545009971,
+          "peak_mebibytes": 0.03316020965576172,
+          "analytics_signature": "3b686ff65a35b2d9524a865726643561aedb768d0c4e3928bfb9427e35993191"
+        }
+      }
+    },
+    "at1": {
+      "ingest": {
+        "gene_model": {
+          "status": "ok",
+          "rows": 53,
+          "mean_seconds": 0.001748249982483685,
+          "max_seconds": 0.001799750025384128,
+          "peak_mebibytes": 0.041769981384277344,
+          "analytics_signature": null
+        },
+        "rows": {
+          "status": "ok",
+          "rows": 53,
+          "mean_seconds": 0.00030058366246521473,
+          "max_seconds": 0.0003070420352742076,
+          "peak_mebibytes": 0.051474571228027344,
+          "analytics_signature": null
+        },
+        "polars_df": {
+          "status": "ok",
+          "rows": 53,
+          "mean_seconds": 0.00038112533123542863,
+          "max_seconds": 0.0003992919810116291,
+          "peak_mebibytes": 0.051497459411621094,
+          "analytics_signature": null
+        }
+      },
+      "end_to_end": {
+        "gene_model": {
+          "status": "ok",
+          "rows": 22,
+          "mean_seconds": 0.0019774440055092177,
+          "max_seconds": 0.00198937498498708,
+          "peak_mebibytes": 0.041716575622558594,
+          "analytics_signature": "95bcd319707173d36087a389a595ac4f63d24554c30b17fef7d6ff658385bde2"
+        },
+        "rows": {
+          "status": "ok",
+          "rows": 22,
+          "mean_seconds": 0.0006107920004675785,
+          "max_seconds": 0.0006365419831126928,
+          "peak_mebibytes": 0.051474571228027344,
+          "analytics_signature": "dbd95b744e282bffed21651b668ed90190ed126919b651ef3dd35b68fa45a985"
+        },
+        "polars_df": {
+          "status": "ok",
+          "rows": 22,
+          "mean_seconds": 0.0007703469988579551,
+          "max_seconds": 0.0007767500355839729,
+          "peak_mebibytes": 0.051497459411621094,
+          "analytics_signature": "dbd95b744e282bffed21651b668ed90190ed126919b651ef3dd35b68fa45a985"
+        }
+      }
+    },
+    "at2": {
+      "ingest": {
+        "gene_model": {
+          "status": "error:ValueError",
+          "rows": 8,
+          "mean_seconds": 0.0,
+          "max_seconds": 0.0,
+          "peak_mebibytes": 0.0,
+          "analytics_signature": null
+        },
+        "rows": {
+          "status": "ok",
+          "rows": 8,
+          "mean_seconds": 9.234730775157611e-05,
+          "max_seconds": 9.724998380988836e-05,
+          "peak_mebibytes": 0.020219802856445312,
+          "analytics_signature": null
+        },
+        "polars_df": {
+          "status": "ok",
+          "rows": 8,
+          "mean_seconds": 0.00012513863233228525,
+          "max_seconds": 0.00012845790479332209,
+          "peak_mebibytes": 0.020242691040039062,
+          "analytics_signature": null
+        }
+      },
+      "end_to_end": {
+        "gene_model": {
+          "status": "error:ValueError",
+          "rows": 8,
+          "mean_seconds": 0.0,
+          "max_seconds": 0.0,
+          "peak_mebibytes": 0.0,
+          "analytics_signature": null
+        },
+        "rows": {
+          "status": "ok",
+          "rows": 0,
+          "mean_seconds": 0.00010627803082267444,
+          "max_seconds": 0.00010966695845127106,
+          "peak_mebibytes": 0.020219802856445312,
+          "analytics_signature": "be754e446b70ea14ae007e250145f3c0f9200a7af1bd7e03d0eec43f393c91fe"
+        },
+        "polars_df": {
+          "status": "ok",
+          "rows": 0,
+          "mean_seconds": 0.00017112431426843008,
+          "max_seconds": 0.00017454102635383606,
+          "peak_mebibytes": 0.020219802856445312,
+          "analytics_signature": "be754e446b70ea14ae007e250145f3c0f9200a7af1bd7e03d0eec43f393c91fe"
+        }
+      }
+    }
+  },
+  "decision": {
+    "recommendation": "defer",
+    "decision": "threshold_not_met",
+    "evaluated_real_datasets": 3,
+    "compared_real_datasets": 3,
+    "winning_datasets": 0,
+    "runtime_speedup_threshold": 0.2,
+    "memory_regression_threshold": 0.1,
+    "required_real_datasets": 3,
+    "min_winning_datasets": 2,
+    "notes": "required runtime and memory win thresholds not met"
+  }
+}
