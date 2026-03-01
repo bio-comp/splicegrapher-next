@@ -20,7 +20,8 @@ def configure_logging(*, level: int = 20) -> None:
     timestamper = structlog.processors.TimeStamper(fmt="iso", utc=True)
     structlog.configure(
         processors=[
-            structlog.stdlib.add_log_level,
+            structlog.contextvars.merge_contextvars,
+            structlog.processors.add_log_level,
             timestamper,
             structlog.processors.StackInfoRenderer(),
             structlog.dev.set_exc_info,
@@ -33,7 +34,12 @@ def configure_logging(*, level: int = 20) -> None:
     _CONFIGURED = True
 
 
-def get_logger(name: str | None = None) -> FilteringBoundLogger:
+def get_logger(
+    name: str | None = None,
+    *,
+    level: int | None = None,
+) -> FilteringBoundLogger:
     """Return a configured structlog logger."""
-    configure_logging()
+    if not _CONFIGURED:
+        configure_logging(level=20 if level is None else level)
     return cast(FilteringBoundLogger, structlog.get_logger(name))
