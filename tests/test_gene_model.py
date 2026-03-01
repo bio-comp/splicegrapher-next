@@ -115,3 +115,21 @@ def test_gene_model_alias_mapping_uses_recordtype_domain() -> None:
 
 def test_gene_model_valid_strands_uses_enum_domain() -> None:
     assert gm.VALID_STRANDS == set(Strand)
+
+
+def test_exon_default_attributes_are_not_shared() -> None:
+    exon_one = Exon(1, 10, "chr1", "+")
+    exon_two = Exon(20, 30, "chr1", "+")
+
+    exon_one.attributes["tag"] = "one"
+
+    assert "tag" not in exon_two.attributes
+
+
+def test_gene_default_attributes_are_not_shared() -> None:
+    gene_one = Gene("GENE1", None, 1, 10, "chr1", "+")
+    gene_two = Gene("GENE2", None, 20, 30, "chr1", "+")
+
+    gene_one.attributes["tag"] = "one"
+
+    assert "tag" not in gene_two.attributes

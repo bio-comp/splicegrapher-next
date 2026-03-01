@@ -109,8 +109,9 @@ def dictToGTF(d):
     return "; ".join(['%s "%s"' % (k, v) for k, v in sorted(d.items()) if k != "parent"])
 
 
-def cdsFactory(recType, startPos, endPos, chrName, strand, attr={}):
+def cdsFactory(recType, startPos, endPos, chrName, strand, attr=None):
     """Simple factory method for creating CDS-type records."""
+    attr = {} if attr is None else attr
     if recType == RecordType.CDS:
         return CDS(startPos, endPos, chrName, strand, attr)
     elif recType == RecordType.FIVE_PRIME_UTR:
@@ -251,14 +252,14 @@ def featureSearch(features, query, lo=0, hi=None):
 
 
 class BaseFeature(object):
-    def __init__(self, featureType, start, end, chromosome, strand, attr={}):
+    def __init__(self, featureType, start, end, chromosome, strand, attr=None):
         self.chromosome = chromosome
         self.strand = strand
         self.parent = None
         self.minpos = min(start, end)
         self.maxpos = max(start, end)
         self.featureType = featureType
-        self.attributes = attr
+        self.attributes = {} if attr is None else attr
 
     def acceptor(self):
         """
@@ -310,10 +311,11 @@ class BaseFeature(object):
             and self.chromosome == other.chromosome
         )
 
-    def gffString(self, altAttributes={}):
+    def gffString(self, altAttributes=None):
         """Returns a GFF-formatted representation of the feature."""
         attrs = dict(self.attributes)
-        attrs.update(altAttributes)
+        if altAttributes is not None:
+            attrs.update(altAttributes)
 
         return "%s\t%s\t%s\t%d\t%d\t.\t%s\t.\t%s" % (
             self.chromosome.capitalize(),
@@ -369,7 +371,7 @@ class BaseFeature(object):
 
 
 class Exon(BaseFeature):
-    def __init__(self, start, end, chromosome, strand, attr={}):
+    def __init__(self, start, end, chromosome, strand, attr=None):
         BaseFeature.__init__(self, RecordType.EXON, start, end, chromosome, strand, attr)
         self.parents = []
 
@@ -391,7 +393,7 @@ class Exon(BaseFeature):
 
 
 class Isoform(BaseFeature):
-    def __init__(self, id, start, end, chromosome, strand, attr={}):
+    def __init__(self, id, start, end, chromosome, strand, attr=None):
         BaseFeature.__init__(self, ISOFORM_TYPE, start, end, chromosome, strand, attr)
         self.id = id
         if self.id == "ENSG00000149256":
@@ -540,7 +542,7 @@ class Isoform(BaseFeature):
 
 # Just as exons are part of an isoform, so CDS elements are part of an mRNA sequence:
 class CDS(Exon):
-    def __init__(self, start, end, chromosome, strand, attr={}):
+    def __init__(self, start, end, chromosome, strand, attr=None):
         BaseFeature.__init__(self, RecordType.CDS, start, end, chromosome, strand, attr)
         self.parents = []
 
@@ -572,13 +574,13 @@ class CDS(Exon):
 
 # We treat UTR records the same way as CDS records
 class FP_UTR(CDS):
-    def __init__(self, start, end, chromosome, strand, attr={}):
+    def __init__(self, start, end, chromosome, strand, attr=None):
         BaseFeature.__init__(self, RecordType.FIVE_PRIME_UTR, start, end, chromosome, strand, attr)
         self.parents = []
 
 
 class TP_UTR(CDS):
-    def __init__(self, start, end, chromosome, strand, attr={}):
+    def __init__(self, start, end, chromosome, strand, attr=None):
         BaseFeature.__init__(self, RecordType.THREE_PRIME_UTR, start, end, chromosome, strand, attr)
         self.parents = []
 
@@ -589,7 +591,7 @@ class mRNA(Isoform):
     and contains a number of coding sequences (CDS).
     """
 
-    def __init__(self, id, start, end, chromosome, strand, attr={}):
+    def __init__(self, id, start, end, chromosome, strand, attr=None):
         BaseFeature.__init__(self, RecordType.MRNA, start, end, chromosome, strand, attr)
         self.id = id
         self.exons = []
@@ -818,7 +820,7 @@ class mRNA(Isoform):
 
 
 class Gene(BaseFeature):
-    def __init__(self, id, note, start, end, chromosome, strand, name=None, attr={}):
+    def __init__(self, id, note, start, end, chromosome, strand, name=None, attr=None):
         BaseFeature.__init__(self, RecordType.GENE, start, end, chromosome, strand, attr)
         self.id = id
         self.name = name if name is not None else id
@@ -1117,7 +1119,7 @@ class Gene(BaseFeature):
 
 
 class PseudoGene(Gene):
-    def __init__(self, id, note, start, end, chromosome, strand, name=None, attr={}):
+    def __init__(self, id, note, start, end, chromosome, strand, name=None, attr=None):
         BaseFeature.__init__(self, RecordType.PSEUDOGENE, start, end, chromosome, strand, attr)
         self.id = id
         self.name = name
