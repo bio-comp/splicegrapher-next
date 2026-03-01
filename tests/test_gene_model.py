@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from SpliceGrapher.core.enums import RecordType
+from SpliceGrapher.core.enums import RecordType, Strand
 from SpliceGrapher.formats import GeneModel as gm
 from SpliceGrapher.formats.GeneModel import Exon, Gene, GeneModel, feature_search, featureSearch
 
@@ -102,17 +102,16 @@ def test_load_gene_model_rejects_unknown_record_type() -> None:
         model.loadGeneModel(records)
 
 
-def test_gene_model_record_type_constants_use_enum_members() -> None:
-    assert gm.CDS_TYPE is RecordType.CDS
-    assert gm.CHR_TYPE is RecordType.CHROMOSOME
-    assert gm.EXON_TYPE is RecordType.EXON
-    assert gm.GENE_TYPE is RecordType.GENE
-    assert gm.MRNA_TYPE is RecordType.MRNA
-    assert gm.PSEUDOGENE_TYPE is RecordType.PSEUDOGENE
-    assert gm.PSEUDOEXON_TYPE is RecordType.PSEUDOGENIC_EXON
-
-
 def test_gene_model_record_type_collections_are_enum_backed() -> None:
     assert all(isinstance(item, RecordType) for item in gm.KNOWN_RECTYPES)
     assert all(isinstance(item, RecordType) for item in gm.IGNORE_RECTYPES)
     assert all(isinstance(item, RecordType) for item in gm.CDS_TYPES)
+
+
+def test_gene_model_alias_mapping_uses_recordtype_domain() -> None:
+    assert gm.RECTYPE_MAP[RecordType.PREDICTED_GENE] is RecordType.GENE
+    assert gm.RECTYPE_MAP[RecordType.CDS_PREDICTED] is RecordType.CDS
+
+
+def test_gene_model_valid_strands_uses_enum_domain() -> None:
+    assert gm.VALID_STRANDS == set(Strand)

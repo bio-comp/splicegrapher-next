@@ -16,47 +16,33 @@ from SpliceGrapher.shared.format_utils import comma_format
 from SpliceGrapher.shared.process_utils import getAttribute
 from SpliceGrapher.shared.progress import ProgressIndicator
 
-# GFF record types (enum-backed, str-compatible)
-CDS_TYPE = RecordType.CDS
-CHR_TYPE = RecordType.CHROMOSOME
-EXON_TYPE = RecordType.EXON
-FP_UTR_TYPE = RecordType.FIVE_PRIME_UTR
-GENE_TYPE = RecordType.GENE
-INTRON_TYPE = RecordType.INTRON
-MRNA_TYPE = RecordType.MRNA
-MRNA_TE_TYPE = RecordType.MRNA_TE_GENE
-NONUNIQUE_TYPE = RecordType.NONUNIQUE
-PROTEIN_RECORD = RecordType.PROTEIN
-PREDCDS_TYPE = RecordType.CDS_PREDICTED
-PREDGENE_TYPE = RecordType.PREDICTED_GENE
-TP_UTR_TYPE = RecordType.THREE_PRIME_UTR
-TRANS_ELE_TYPE = RecordType.TRANS_ELE_GENE
-
-PSEUDOGENE_TYPE = RecordType.PSEUDOGENE
-PSEUDOTRANS_TYPE = RecordType.PSEUDOGENIC_TRANSCRIPT
-PSEUDOEXON_TYPE = RecordType.PSEUDOGENIC_EXON
-
 KNOWN_RECTYPES = [
-    CDS_TYPE,
-    CHR_TYPE,
-    EXON_TYPE,
-    FP_UTR_TYPE,
-    GENE_TYPE,
-    INTRON_TYPE,
-    MRNA_TYPE,
-    MRNA_TE_TYPE,
-    NONUNIQUE_TYPE,
-    PROTEIN_RECORD,
-    PREDCDS_TYPE,
-    PREDGENE_TYPE,
-    PSEUDOGENE_TYPE,
-    PSEUDOEXON_TYPE,
-    PSEUDOTRANS_TYPE,
-    TP_UTR_TYPE,
-    TRANS_ELE_TYPE,
+    RecordType.CDS,
+    RecordType.CHROMOSOME,
+    RecordType.EXON,
+    RecordType.FIVE_PRIME_UTR,
+    RecordType.GENE,
+    RecordType.INTRON,
+    RecordType.MRNA,
+    RecordType.MRNA_TE_GENE,
+    RecordType.NONUNIQUE,
+    RecordType.PROTEIN,
+    RecordType.CDS_PREDICTED,
+    RecordType.PREDICTED_GENE,
+    RecordType.PSEUDOGENE,
+    RecordType.PSEUDOGENIC_EXON,
+    RecordType.PSEUDOGENIC_TRANSCRIPT,
+    RecordType.THREE_PRIME_UTR,
+    RecordType.TRANS_ELE_GENE,
 ]
-IGNORE_RECTYPES = [PROTEIN_RECORD, INTRON_TYPE, MRNA_TE_TYPE, TRANS_ELE_TYPE, NONUNIQUE_TYPE]
-CDS_TYPES = [FP_UTR_TYPE, TP_UTR_TYPE, CDS_TYPE]
+IGNORE_RECTYPES = {
+    RecordType.PROTEIN,
+    RecordType.INTRON,
+    RecordType.MRNA_TE_GENE,
+    RecordType.TRANS_ELE_GENE,
+    RecordType.NONUNIQUE,
+}
+CDS_TYPES = {RecordType.FIVE_PRIME_UTR, RecordType.THREE_PRIME_UTR, RecordType.CDS}
 
 # Special GTF types for conversions
 GTF_GENE_ID = "gene_id"
@@ -68,18 +54,18 @@ GTF_EXON_ID = "exon_number"
 GTF_PROTEIN_ID = "protein_id"
 
 # Record type map allows mapping unusual names to known types:
-RECTYPE_MAP = dict([(s, s) for s in KNOWN_RECTYPES])
-RECTYPE_MAP[PREDGENE_TYPE] = GENE_TYPE
-RECTYPE_MAP[PREDCDS_TYPE] = CDS_TYPE
+RECTYPE_MAP = {k: k for k in KNOWN_RECTYPES}
+RECTYPE_MAP[RecordType.PREDICTED_GENE] = RecordType.GENE
+RECTYPE_MAP[RecordType.CDS_PREDICTED] = RecordType.CDS
 
 # Virtual types (don't appear in GFF):
 ISOFORM_TYPE = "isoform"
 
 # Annotation fields:
-ID_FIELD = AttrKey.ID.value
-NAME_FIELD = AttrKey.NAME.value
-NOTE_FIELD = AttrKey.NOTE.value
-PARENT_FIELD = AttrKey.PARENT.value
+ID_FIELD = AttrKey.ID
+NAME_FIELD = AttrKey.NAME
+NOTE_FIELD = AttrKey.NOTE
+PARENT_FIELD = AttrKey.PARENT
 
 # There seems to be no consensus about how these tags are used in UCSC, ENSEMBL
 # and other forms of gene models, so we must try each kind:
@@ -91,7 +77,7 @@ GFF_ID = "SpliceGrapher"
 MAX_BAD_LINES = 3
 
 # Some files contain '.' for an unassigned strand
-VALID_STRANDS = [Strand.MINUS.value, Strand.PLUS.value, Strand.UNKNOWN.value]
+VALID_STRANDS = set(Strand)
 
 FORM_DELIMITERS = [".", "-", "_", ","]
 
@@ -105,7 +91,7 @@ GENE_SEARCH_MARGIN = 8
 
 def gene_type_filter(g):
     """Convenience filter for getting only 'gene' records."""
-    return g.featureType == GENE_TYPE
+    return g.featureType == RecordType.GENE
 
 
 def defaultGeneFilter(g):
@@ -125,11 +111,11 @@ def dictToGTF(d):
 
 def cdsFactory(recType, startPos, endPos, chrName, strand, attr={}):
     """Simple factory method for creating CDS-type records."""
-    if recType == CDS_TYPE:
+    if recType == RecordType.CDS:
         return CDS(startPos, endPos, chrName, strand, attr)
-    elif recType == FP_UTR_TYPE:
+    elif recType == RecordType.FIVE_PRIME_UTR:
         return FP_UTR(startPos, endPos, chrName, strand, attr)
-    elif recType == TP_UTR_TYPE:
+    elif recType == RecordType.THREE_PRIME_UTR:
         return TP_UTR(startPos, endPos, chrName, strand, attr)
     else:
         raise ValueError("Illegal CDS record type: %s" % recType)
@@ -384,7 +370,7 @@ class BaseFeature(object):
 
 class Exon(BaseFeature):
     def __init__(self, start, end, chromosome, strand, attr={}):
-        BaseFeature.__init__(self, EXON_TYPE, start, end, chromosome, strand, attr)
+        BaseFeature.__init__(self, RecordType.EXON, start, end, chromosome, strand, attr)
         self.parents = []
 
     def __str__(self):
@@ -555,7 +541,7 @@ class Isoform(BaseFeature):
 # Just as exons are part of an isoform, so CDS elements are part of an mRNA sequence:
 class CDS(Exon):
     def __init__(self, start, end, chromosome, strand, attr={}):
-        BaseFeature.__init__(self, CDS_TYPE, start, end, chromosome, strand, attr)
+        BaseFeature.__init__(self, RecordType.CDS, start, end, chromosome, strand, attr)
         self.parents = []
 
     def __cmp__(self, o):
@@ -587,13 +573,13 @@ class CDS(Exon):
 # We treat UTR records the same way as CDS records
 class FP_UTR(CDS):
     def __init__(self, start, end, chromosome, strand, attr={}):
-        BaseFeature.__init__(self, FP_UTR_TYPE, start, end, chromosome, strand, attr)
+        BaseFeature.__init__(self, RecordType.FIVE_PRIME_UTR, start, end, chromosome, strand, attr)
         self.parents = []
 
 
 class TP_UTR(CDS):
     def __init__(self, start, end, chromosome, strand, attr={}):
-        BaseFeature.__init__(self, TP_UTR_TYPE, start, end, chromosome, strand, attr)
+        BaseFeature.__init__(self, RecordType.THREE_PRIME_UTR, start, end, chromosome, strand, attr)
         self.parents = []
 
 
@@ -604,7 +590,7 @@ class mRNA(Isoform):
     """
 
     def __init__(self, id, start, end, chromosome, strand, attr={}):
-        BaseFeature.__init__(self, MRNA_TYPE, start, end, chromosome, strand, attr)
+        BaseFeature.__init__(self, RecordType.MRNA, start, end, chromosome, strand, attr)
         self.id = id
         self.exons = []
         self.features = []
@@ -668,14 +654,16 @@ class mRNA(Isoform):
         for c in self.cds[1:]:
             if (
                 not self.start_codon
-                and prev.featureType == FP_UTR_TYPE
-                and c.featureType == CDS_TYPE
+                and prev.featureType == RecordType.FIVE_PRIME_UTR
+                and c.featureType == RecordType.CDS
             ):
                 self.start_codon = (
                     (c.minpos, c.minpos + 2) if self.strand == "+" else (c.maxpos - 2, c.maxpos)
                 )
             elif (
-                not self.end_codon and prev.featureType == CDS_TYPE and c.featureType == TP_UTR_TYPE
+                not self.end_codon
+                and prev.featureType == RecordType.CDS
+                and c.featureType == RecordType.THREE_PRIME_UTR
             ):
                 self.end_codon = (
                     (prev.maxpos - 2, prev.maxpos)
@@ -711,7 +699,11 @@ class mRNA(Isoform):
 
     def getUTRs(self):
         """Returns a list of all UTR records in the mRNA object."""
-        return [c for c in self.cds if c.featureType in [FP_UTR_TYPE, TP_UTR_TYPE]]
+        return [
+            c
+            for c in self.cds
+            if c.featureType in [RecordType.FIVE_PRIME_UTR, RecordType.THREE_PRIME_UTR]
+        ]
 
     def gffStrings(self):
         result = [self.gffString()]
@@ -800,7 +792,7 @@ class mRNA(Isoform):
                 result.append(Exon(cds.start(), cds.end(), self.chromosome, self.strand))
         # Revise feature types to indicate CDS instead of exon
         for e in result:
-            e.featureType = CDS_TYPE
+            e.featureType = RecordType.CDS
         return result
 
     def startCodon(self):
@@ -827,7 +819,7 @@ class mRNA(Isoform):
 
 class Gene(BaseFeature):
     def __init__(self, id, note, start, end, chromosome, strand, name=None, attr={}):
-        BaseFeature.__init__(self, GENE_TYPE, start, end, chromosome, strand, attr)
+        BaseFeature.__init__(self, RecordType.GENE, start, end, chromosome, strand, attr)
         self.id = id
         self.name = name if name is not None else id
         self.note = note
@@ -1062,10 +1054,10 @@ class Gene(BaseFeature):
                 cCtr = 0
                 for i in range(len(allExons)):
                     item = allExons[i]
-                    if item.featureType == EXON_TYPE:
+                    if item.featureType == RecordType.EXON:
                         eCtr += 1
                         stringList.append(item.gtfString(k, self, eCtr))
-                    elif item.featureType == CDS_TYPE:
+                    elif item.featureType == RecordType.CDS:
                         cCtr += 1
                         stringList.append(item.gtfString(k, self, cCtr))
 
@@ -1126,7 +1118,7 @@ class Gene(BaseFeature):
 
 class PseudoGene(Gene):
     def __init__(self, id, note, start, end, chromosome, strand, name=None, attr={}):
-        BaseFeature.__init__(self, PSEUDOGENE_TYPE, start, end, chromosome, strand, attr)
+        BaseFeature.__init__(self, RecordType.PSEUDOGENE, start, end, chromosome, strand, attr)
         self.id = id
         self.name = name
         self.note = note
@@ -1593,7 +1585,7 @@ class GeneModel(object):
                 continue
 
             # Many gene types possible, usually ending in '_gene'
-            if recType in [GENE_TYPE, PSEUDOGENE_TYPE]:
+            if recType in [RecordType.GENE, RecordType.PSEUDOGENE]:
                 # Id is used for comparision, so use all uppercase
                 try:
                     gid = annots[ID_FIELD].upper()
@@ -1619,7 +1611,7 @@ class GeneModel(object):
                     self.model[chrName] = {}
                     self.addChromosome(1, endPos, chrName)
 
-                if recType == PSEUDOGENE_TYPE:
+                if recType == RecordType.PSEUDOGENE:
                     gene = PseudoGene(gid, note, startPos, endPos, chrName, strand, name, annots)
                 else:  # genes and predicted_genes
                     gene = Gene(gid, note, startPos, endPos, chrName, strand, name, annots)
@@ -1640,7 +1632,7 @@ class GeneModel(object):
                 geneAlias[gene.id.upper()] = gene.name.upper()
                 geneCount += 1
 
-            elif recType in [EXON_TYPE, PSEUDOEXON_TYPE]:
+            elif recType in [RecordType.EXON, RecordType.PSEUDOGENIC_EXON]:
                 if chrName not in self.model:
                     continue
 
@@ -1658,7 +1650,7 @@ class GeneModel(object):
                 if not parent:
                     continue
 
-                gene = parent.parent if parent.featureType == MRNA_TYPE else parent
+                gene = parent.parent if parent.featureType == RecordType.MRNA else parent
 
                 # Next get the isoform if it already exists:
                 isoform = None
@@ -1698,7 +1690,7 @@ class GeneModel(object):
                 exon = Exon(startPos, endPos, chrName, strand, annots)
                 exonCount = exonCount + 1 if gene.addExon(isoform, exon) else exonCount
 
-            elif recType in [MRNA_TYPE, PSEUDOTRANS_TYPE]:
+            elif recType in [RecordType.MRNA, RecordType.PSEUDOGENIC_TRANSCRIPT]:
                 if chrName not in self.model:
                     conditionalException(
                         "line %d: mRNA with missing chromosome dictionary %s (known: %s)"
@@ -1784,10 +1776,10 @@ class GeneModel(object):
                 if gene.addCDS(mrna, cds):
                     cdsCount += 1
 
-            elif recType == CHR_TYPE:
+            elif recType == RecordType.CHROMOSOME:
                 self.addChromosome(startPos, endPos, chrName)
 
-            elif recType in [FP_UTR_TYPE, TP_UTR_TYPE]:
+            elif recType in [RecordType.FIVE_PRIME_UTR, RecordType.THREE_PRIME_UTR]:
                 if chrName not in self.model:
                     continue
                 if PARENT_FIELD not in annots:
