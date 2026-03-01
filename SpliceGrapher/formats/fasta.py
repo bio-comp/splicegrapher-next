@@ -11,7 +11,7 @@ from typing import IO, Iterator
 
 from pyfaidx import Fasta
 
-from SpliceGrapher.shared.file_utils import ezopen
+from SpliceGrapher.shared.file_utils import ez_open
 
 
 class MalformedInput(Exception):
@@ -99,7 +99,7 @@ def _fasta_itr_from_name(fname: str) -> Iterator[FastaRecord]:
     """Provide an iteration through FASTA records in a file path."""
     path = Path(fname)
     if path.suffix.lower() in {".gz", ".bgz"}:
-        handle = ezopen(fname)
+        handle = ez_open(fname)
         try:
             yield from _fasta_itr_from_file(handle)
         finally:

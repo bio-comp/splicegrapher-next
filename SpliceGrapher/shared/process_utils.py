@@ -5,7 +5,7 @@ import subprocess
 import sys
 
 from SpliceGrapher.shared import streams
-from SpliceGrapher.shared.format_utils import timeString
+from SpliceGrapher.shared.format_utils import time_string
 
 
 def getAttribute(key, default, **args):
@@ -38,7 +38,7 @@ def runCommand(s, **args):
     exitOnError = getAttribute("exitOnError", True, **args)
     stderr = getAttribute("stderr", None, **args)
     stdout = getAttribute("stdout", None, **args)
-    message = "    " + timeString("%s\n" % s)
+    message = "    " + time_string(f"{s}\n")
     sys.stderr.write(message)
     if logstream:
         logstream.write(message)
@@ -62,4 +62,4 @@ def runCommand(s, **args):
 def writeStartupMessage():
     """Standardized startup message for all scripts."""
     base = os.path.basename(sys.argv[0])
-    sys.stderr.write(timeString("%s Started\n" % base))
+    sys.stderr.write(time_string(f"{base} Started\n"))

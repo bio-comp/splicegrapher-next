@@ -5,7 +5,7 @@ Module containing classes and methods for handling short-read data.
 import os
 from sys import maxsize as MAXINT
 
-from SpliceGrapher.shared.file_utils import ezopen
+from SpliceGrapher.shared.file_utils import ez_open
 from SpliceGrapher.shared.utils import ProgressIndicator, getAttribute, idFactory
 
 #################################################
@@ -29,7 +29,7 @@ def depthsHeader(path):
     information must all come at the start of a file."""
     result = {}
     ctr = 0
-    with ezopen(path) as inStream:
+    with ez_open(path) as inStream:
         for line in inStream:
             ctr += 1
             s = line.strip()
@@ -91,7 +91,7 @@ def isDepthsFile(f):
         path = os.fspath(f)
         if not os.path.isfile(path):
             return False
-        with ezopen(path) as inStream:
+        with ez_open(path) as inStream:
             firstLine = inStream.readline()
     elif hasattr(f, "read"):
         firstLine = f.readline()
@@ -127,7 +127,7 @@ def readDepths(f, **args):
     # Loading into buffer all at once is 18-30%
     # faster than doing millions of reads, and not
     # too memory-intensive even for large genomes
-    lines = ezopen(f).readlines()
+    lines = ez_open(f).readlines()
     indicator = ProgressIndicator(1000000, verbose=verbose)
     for line in lines:
         indicator.update()

@@ -13,7 +13,7 @@ from SpliceGrapher.shared.ShortRead import (
     isDepthsFile,
     readDepths,
 )
-from SpliceGrapher.shared.utils import ProgressIndicator, ezopen, getAttribute
+from SpliceGrapher.shared.utils import ProgressIndicator, ez_open, getAttribute
 
 LOGGER = structlog.get_logger(__name__)
 
@@ -1229,7 +1229,7 @@ def isBamFile(filePath):
 def loadSAMRecords(f):
     """Loads SAM records from a file and returns them in a list."""
     result = []
-    for s in ezopen(f):
+    for s in ez_open(f):
         if not s.startswith("@"):
             result.append(AlignmentRecord(s))
     return result
@@ -1300,7 +1300,7 @@ def samIterator(path, isBam=False, **args):
     if isBam or isBamFile(path) or isCramFile(path):
         return bamIterator(path, **args)
     else:
-        return ezopen(path)
+        return ez_open(path)
 
 
 def validCigarString(s):

@@ -4,12 +4,11 @@ file and provides methods for searching on the data.
 """
 
 # TRYING A NEW WAY TO IDENTIFY GENES:
-import difflib
 import os
 import sys
 from urllib.parse import unquote
 
-from SpliceGrapher.shared.utils import ProgressIndicator, commaFormat, ezopen, getAttribute
+from SpliceGrapher.shared.utils import ProgressIndicator, comma_format, ez_open, getAttribute
 
 # GFF record types
 CDS_TYPE = "cds"
@@ -232,9 +231,9 @@ def featureSearch(features, query, lo=0, hi=None):
         hi = len(features) - 1
 
     if lo + 1 >= hi:
-        if contains(features[lo], query):
+        if featureContains(features[lo], query):
             return features[lo]
-        elif contains(features[hi], query):
+        elif featureContains(features[hi], query):
             return features[hi]
         elif featureCmp(features[lo], features[hi]) >= 0:
             return features[lo]
@@ -427,16 +426,15 @@ class Isoform(BaseFeature):
             )
 
         exonTuple = (exon.minpos, exon.maxpos)
-        try:
-            ignore = self.exonMap[exonTuple]
+        if exonTuple in self.exonMap:
             return False
-        except KeyError:
-            self.exons.append(exon)
-            self.exonMap[exonTuple] = exon
-            if self not in exon.parents:
-                exon.parents.append(self)
-            self.minpos = min(self.minpos, exon.minpos)
-            self.maxpos = max(self.maxpos, exon.maxpos)
+
+        self.exons.append(exon)
+        self.exonMap[exonTuple] = exon
+        if self not in exon.parents:
+            exon.parents.append(self)
+        self.minpos = min(self.minpos, exon.minpos)
+        self.maxpos = max(self.maxpos, exon.maxpos)
         return True
 
     def addFeature(self, feature):
@@ -621,11 +619,9 @@ class mRNA(Isoform):
             )
 
         cdsTuple = (cds.minpos, cds.maxpos)
-        try:
-            ignore = self.cdsMap[cdsTuple]
+        if cdsTuple in self.cdsMap:
             return False
-        except KeyError:
-            self.cdsMap[cdsTuple] = cds
+        self.cdsMap[cdsTuple] = cds
 
         if self not in cds.parents:
             cds.parents.append(self)
@@ -1176,14 +1172,11 @@ class GeneModel(object):
     def addGene(self, gene):
         """Adds a gene to a gene model.  Raises a ValueError if the
         gene has already been added."""
-        try:
-            ##ignore = (self.model[gene.chromosome][gene.id], self.allGenes[gene.id])
-            ignore = (self.model[gene.chromosome][gene.id], self.allGenes[str(gene)])
+        if gene.id in self.model[gene.chromosome] or str(gene) in self.allGenes:
             raise ValueError("Gene %s already stored in gene model" % gene.id)
-        except KeyError:
-            self.model[gene.chromosome][gene.id] = gene
-            ##self.allGenes[gene.id]       = gene
-            self.allGenes[str(gene)] = gene
+
+        self.model[gene.chromosome][gene.id] = gene
+        self.allGenes[str(gene)] = gene
 
     def binarySearchGenes(self, geneList, loc, lo, hi, pfx=""):
         """Quasi-binary search through a gene list.  Performs binary search to a point,
@@ -1490,11 +1483,11 @@ class GeneModel(object):
             if not ignoreErrors:
                 raise Exception(s)
 
-        if type(gffRecords) == str:
+        if isinstance(gffRecords, str):
             if verbose:
                 sys.stderr.write("Loading and validating gene models in %s\n" % gffRecords)
-            instream = ezopen(gffRecords)
-        elif type(gffRecords) in [list, set, file]:
+            instream = ez_open(gffRecords)
+        elif isinstance(gffRecords, (list, set, tuple)):
             if verbose:
                 sys.stderr.write(
                     "Loading and validating gene models in %d records\n" % len(gffRecords)
@@ -1507,7 +1500,7 @@ class GeneModel(object):
 
         if "chromosomes" in args:
             chrParam = args["chromosomes"]
-            if type(chrParam) == type([]):
+            if isinstance(chrParam, (list, tuple, set)):
                 chromosomes = [s.lower() for s in chrParam]
             elif chrParam:
                 chromosomes = [chrParam]
@@ -1760,7 +1753,6 @@ class GeneModel(object):
                 else:
                     strand = mrna.strand
 
-                geneId = mrna.parent.id
                 cds = cdsFactory(recType, startPos, endPos, chrName, strand, annots)
 
                 if not gene:
@@ -1793,8 +1785,7 @@ class GeneModel(object):
                 else:
                     if verbose:
                         sys.stderr.write(
-                            "line %d: no parent %s found for %s at line %d: %s\n"
-                            % (lineCtr, parentId, recType, e)
+                            "line %d: no parent %s found for %s\n" % (lineCtr, parentId, recType)
                         )
                     continue
 
@@ -1820,12 +1811,12 @@ class GeneModel(object):
                 sys.stderr.write(
                     "Loaded %s genes with %s isoforms, %s exons (avg. %.1f/gene), %s mRNA, %s CDS (avg. %.1f/gene)\n"
                     % (
-                        commaFormat(geneCount),
-                        commaFormat(isoCount),
-                        commaFormat(exonCount),
+                        comma_format(geneCount),
+                        comma_format(isoCount),
+                        comma_format(exonCount),
                         float(exonCount) / geneCount,
-                        commaFormat(mrnaCount),
-                        commaFormat(cdsCount),
+                        comma_format(mrnaCount),
+                        comma_format(cdsCount),
                         float(cdsCount / geneCount),
                     )
                 )
@@ -1857,7 +1848,6 @@ class GeneModel(object):
         chromList = sorted(self.allChr.keys())
         indicator = ProgressIndicator(10000, verbose=verbose)
         for c in chromList:
-            chrom = self.getChromosome(c)
             outStream.write("%s\n" % chrom.gffString())
             genes = self.getGeneRecords(c, geneFilter)
             if geneSubset:
@@ -1873,7 +1863,7 @@ class GeneModel(object):
     def writeGTF(self, gtfPath, geneFilter=defaultGeneFilter, **args):
         """Writes a complete gene model out to a GTF file."""
         verbose = getAttribute("verbose", False, **args)
-        outStream = open(gtfPath, "w") if type(gtfPath) == type("") else gtfPath
+        outStream = open(gtfPath, "w") if isinstance(gtfPath, str) else gtfPath
         chromList = sorted(self.allChr.keys())
         indicator = ProgressIndicator(10000, verbose=verbose)
         for c in chromList:

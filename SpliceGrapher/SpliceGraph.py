@@ -3,9 +3,15 @@ Module that encapsulates a splice graph.
 """
 
 import sys
-from sys import maxsize as MAXINT
 
-from SpliceGrapher.shared.utils import *
+from SpliceGrapher.shared.utils import (
+    ProgressIndicator,
+    as_list,
+    ez_open,
+    getAttribute,
+    idFactory,
+    list_string,
+)
 
 # Attributes used in standard GFF3 files:
 SOURCE_NAME = "SpliceGraph"
@@ -464,9 +470,7 @@ def graphSubtract(A, B, **args):
     nodesB = B.resolvedNodes() if resolvedOnly else B.nodeDict.values()
     subsetA = []
     for a in nodesA:
-        try:
-            bidx = nodesB.index(a)
-        except ValueError:
+        if a not in nodesB:
             newNode = result.addNode(a.id, a.minpos, a.maxpos)
             newNode.attrs = a.attrs
             subsetA.append(a)
@@ -541,7 +545,7 @@ def splitFiles(parser, directory=None):
 
     for g in parser.__iter__():
         outName = "%s_graph.gff" % fixName(g.getName())
-        outFile = os.path.join(directry, outName) if directory else outName
+        outFile = os.path.join(directory, outName) if directory else outName
         g.writeGFF(outFile)
 
 
@@ -731,7 +735,7 @@ class SpliceGraphNode(object):
         """If the codon falls within the node, its start position is added to the set;
         otherwise the list is unchanged."""
 
-        if (type(codon) != tuple) or (len(codon) != 2):
+        if (not isinstance(codon, tuple)) or (len(codon) != 2):
             raise ValueError(
                 "Codons must be provided as a duple of (start,end) positions: received %s"
                 % str(codon)
@@ -739,7 +743,7 @@ class SpliceGraphNode(object):
 
         pos = min(codon) if self.strand == "+" else max(codon)
         if self.contains(pos):
-            assert type(pos) == int
+            assert isinstance(pos, int)
             self.attrs.setdefault(codonType, set())
             self.attrs[codonType].add(pos)
 
@@ -1020,9 +1024,9 @@ class SpliceGraphNode(object):
         """
         self.addAttribute(DISPOSITION_KEY, UNRESOLVED_NODE)
         if acceptors:
-            self.addAttribute(ACCEPTORS_KEY, listString(acceptors))
+            self.addAttribute(ACCEPTORS_KEY, list_string(acceptors))
         if donors:
-            self.addAttribute(DONORS_KEY, listString(donors))
+            self.addAttribute(DONORS_KEY, list_string(donors))
 
         for c in self.children:
             if c.id in preserve:
@@ -1090,7 +1094,7 @@ class SpliceGraph(object):
         self.strand = strand
         self.nodeDict = {}
         self.attrs = {}
-        self.minpos = MAXINT
+        self.minpos = sys.maxsize
         self.maxpos = 0
         # NB: guarantees attributes exist for the graph
         self.setName(name)
@@ -1303,10 +1307,10 @@ class SpliceGraph(object):
     def expandedModel(self, name, oldRange, newRange):
         """Marks a graph when it expands a gene model beyond its original bounds.
         oldRange and newRange must be (minpos,maxpos) pairs."""
-        if len(oldRange) != 2 or type(oldRange[0]) != int or type(oldRange[1]) != int:
+        if len(oldRange) != 2 or not all(isinstance(v, int) for v in oldRange):
             raise ValueError("old range must be 2 int values")
 
-        if len(newRange) != 2 or type(newRange[0]) != int or type(newRange[1]) != int:
+        if len(newRange) != 2 or not all(isinstance(v, int) for v in newRange):
             raise ValueError("new range must be 2 int values")
 
         self.attrs[ALT_MODEL_KEY] = "%s from (%d,%d) to (%d,%d)" % (
@@ -1398,7 +1402,7 @@ class SpliceGraph(object):
         name in the list; it will match all isoforms that contain that part."""
         fuzzyMatch = getAttribute("fuzzyMatch", False, **args)
 
-        isoNames = asList(isoNames)
+        isoNames = as_list(isoNames)
         result = None
         for name in isoNames:
             if fuzzyMatch:
@@ -1531,7 +1535,7 @@ class SpliceGraph(object):
             updateRoot(other, self)
             updateLeaf(other, self)
 
-        result = SpliceGraph(newName, self.chromosome, self.strand)
+        result = SpliceGraph(newName, self.chromosome, merged_strand)
         allNodes = self.resolvedNodes() + other.resolvedNodes()
         for node in allNodes:
             newNode = result.addNode(next(idgen), node.minpos, node.maxpos)
@@ -1649,7 +1653,7 @@ class SpliceGraph(object):
 
         roots = set(self.getRoots())
         other = set(self.nodeDict.values()) - roots
-        newFile = type(fileRef) == str
+        newFile = isinstance(fileRef, str)
         outStream = open(fileRef, "w") if newFile else fileRef
 
         # First write the graph, then parents, then remaining nodes
@@ -1673,8 +1677,8 @@ class SpliceGraphParser(object):
         The file may be given either as an input stream or as a file path."""
         self.verbose = getAttribute("verbose", False, **args)
 
-        if type(fileRef) == type(""):
-            self.instream = ezopen(fileRef)
+        if isinstance(fileRef, str):
+            self.instream = ez_open(fileRef)
         else:
             self.instream = fileRef
 
