@@ -1,0 +1,152 @@
+"""Optional Polars-backed helpers for GFF parsing and analytics."""
+
+from __future__ import annotations
+
+import importlib
+from collections.abc import Iterable, Iterator
+from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    import polars as pl
+
+_GFF_COLUMN_COUNT = 9
+_GFF_COLUMNS = (
+    "chrom",
+    "source",
+    "type",
+    "start",
+    "end",
+    "score",
+    "strand",
+    "phase",
+    "attributes",
+)
+
+
+class PolarsNotInstalledError(ImportError):
+    """Raised when optional Polars dependency is unavailable."""
+
+
+def parse_gff_attributes(attribute_string: str) -> dict[str, str]:
+    """Parse a GFF3 attribute column into key-value pairs.
+
+    Malformed tokens (missing "=" or empty key/value) are ignored.
+    """
+    cleaned = attribute_string.strip()
+    if not cleaned or cleaned == ".":
+        return {}
+
+    result: dict[str, str] = {}
+    for token in cleaned.split(";"):
+        item = token.strip()
+        if not item or "=" not in item:
+            continue
+
+        key, value = item.split("=", 1)
+        if not key or not value:
+            continue
+
+        result[key] = value
+
+    return result
+
+
+def _row_from_parts(parts: list[str]) -> dict[str, str | int | None]:
+    if len(parts) < _GFF_COLUMN_COUNT:
+        raise ValueError(f"expected {_GFF_COLUMN_COUNT} columns, got {len(parts)}")
+
+    try:
+        start = int(parts[3])
+        end = int(parts[4])
+    except ValueError as exc:
+        raise ValueError("start/end must be integers") from exc
+
+    attributes = parse_gff_attributes(parts[8])
+
+    return {
+        "chrom": parts[0],
+        "source": parts[1],
+        "type": parts[2],
+        "start": start,
+        "end": end,
+        "score": parts[5],
+        "strand": parts[6],
+        "phase": parts[7],
+        "attributes": parts[8],
+        "feature_id": attributes.get("ID"),
+        "parent_id": attributes.get("Parent"),
+        "name": attributes.get("Name"),
+    }
+
+
+def iter_gff_records(
+    lines: Iterable[str], *, ignore_malformed: bool = False
+) -> Iterator[dict[str, str | int | None]]:
+    """Yield normalized row dictionaries from raw GFF lines."""
+    for line_no, line in enumerate(lines, start=1):
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+
+        parts = stripped.split("\t")
+        try:
+            yield _row_from_parts(parts)
+        except ValueError as exc:
+            if ignore_malformed:
+                continue
+            raise ValueError(f"line {line_no}: {exc}") from exc
+
+
+def load_gff_rows(
+    path: str | Path,
+    *,
+    ignore_malformed: bool = False,
+) -> list[dict[str, str | int | None]]:
+    """Load GFF rows into dictionaries using the built-in parser path."""
+    gff_path = Path(path)
+    with gff_path.open("r", encoding="utf-8") as handle:
+        return list(iter_gff_records(handle, ignore_malformed=ignore_malformed))
+
+
+def load_gff_to_polars(
+    path: str | Path,
+    *,
+    ignore_malformed: bool = False,
+) -> "pl.DataFrame":
+    """Load GFF rows into a Polars DataFrame (optional dependency)."""
+    try:
+        pl = importlib.import_module("polars")
+    except ModuleNotFoundError as exc:
+        raise PolarsNotInstalledError(
+            "polars is not installed; install optional dependency to use this helper"
+        ) from exc
+
+    rows = load_gff_rows(path, ignore_malformed=ignore_malformed)
+    schema = {
+        "chrom": pl.Utf8,
+        "source": pl.Utf8,
+        "type": pl.Utf8,
+        "start": pl.Int64,
+        "end": pl.Int64,
+        "score": pl.Utf8,
+        "strand": pl.Utf8,
+        "phase": pl.Utf8,
+        "attributes": pl.Utf8,
+        "feature_id": pl.Utf8,
+        "parent_id": pl.Utf8,
+        "name": pl.Utf8,
+    }
+    if not rows:
+        return pl.DataFrame({name: [] for name in schema}, schema=schema)
+
+    return pl.DataFrame(rows, schema=schema)
+
+
+__all__ = [
+    "PolarsNotInstalledError",
+    "iter_gff_records",
+    "load_gff_rows",
+    "load_gff_to_polars",
+    "parse_gff_attributes",
+]
