@@ -76,7 +76,8 @@ Current smoke command target:
 ## Relationship to Other Standards
 
 - Logging standardization is tracked separately in issue `#9`.
-- Progress bar/conda standardization is tracked separately in issue `#10`.
+- Progress/conda standardization is implemented in issue `#10`; runtime policy is
+  documented in `README.md` under "Progress Reporting Policy (tqdm)".
 
 This document only covers Docker/Nextflow/BioContainers friendliness for issue
 `#11`.
