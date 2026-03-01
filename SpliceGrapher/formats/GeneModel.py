@@ -4,6 +4,7 @@ file and provides methods for searching on the data.
 """
 
 # TRYING A NEW WAY TO IDENTIFY GENES:
+import bisect
 import os
 import sys
 from urllib.parse import unquote
@@ -223,35 +224,44 @@ def featureContains(a, b):
     return a.minpos <= b.minpos and a.maxpos >= b.maxpos
 
 
-def featureSearch(features, query, lo=0, hi=None):
+def feature_search(features, query, lo=0, hi=None, overlap_window=8):
     """
-    Binary search through a list of sorted features, each of which has
-    'minpos' and 'maxpos' attributes.  'query' is an example of a feature
-    (such as an exon) to be found in the list.
+    Bisect-based search through a sorted feature list.
 
-    Returns either the feature in the list that contains the query feature,
-    or the one that would immediately precede it in the list.
+    Returns either the feature that contains ``query`` or the feature that
+    would immediately precede it.
     """
+    if not features:
+        raise ValueError("Cannot search an empty feature list")
+
     if hi is None:
         hi = len(features) - 1
 
-    if lo + 1 >= hi:
-        if featureContains(features[lo], query):
-            return features[lo]
-        elif featureContains(features[hi], query):
-            return features[hi]
-        elif featureCmp(features[lo], features[hi]) >= 0:
-            return features[lo]
-        else:
-            return features[hi]
-    else:
-        midpt = (lo + hi) // 2
-        if features[midpt].minpos <= query.minpos:
-            return featureSearch(features, query, midpt, hi)
-        elif features[midpt].maxpos >= query.maxpos:
-            return featureSearch(features, query, lo, midpt)
-        else:  # query contains midpoint
-            return featureSearch(features, query, midpt - 1, midpt)
+    lo = max(0, lo)
+    hi = min(hi, len(features) - 1)
+    if lo > hi:
+        raise ValueError("Invalid search bounds")
+
+    starts = [f.minpos for f in features]
+    idx = bisect.bisect_left(starts, query.minpos, lo=lo, hi=hi + 1)
+
+    left = max(lo, idx - overlap_window)
+    right = min(hi, idx + overlap_window)
+    for i in range(left, right + 1):
+        if featureContains(features[i], query):
+            return features[i]
+
+    pred_idx = idx - 1
+    if pred_idx < lo:
+        return features[lo]
+    if pred_idx > hi:
+        return features[hi]
+    return features[pred_idx]
+
+
+def featureSearch(features, query, lo=0, hi=None):
+    """Compatibility wrapper for ``feature_search``."""
+    return feature_search(features, query, lo=lo, hi=hi)
 
 
 class BaseFeature(object):
@@ -1266,9 +1276,12 @@ class GeneModel(object):
         parts = valStr.split(";")
         result = {}
         for p in parts:
-            if p.find("=") >= 0:
-                keyval = p.split("=")
-                result[keyval[0]] = keyval[1]
+            if "=" not in p:
+                continue
+            key, value = p.split("=", 1)
+            if not key:
+                continue
+            result[key] = value
         return result
 
     def getChromosome(self, chrName):
