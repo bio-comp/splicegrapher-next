@@ -6,13 +6,17 @@ file and provides methods for searching on the data.
 from __future__ import annotations
 
 # TRYING A NEW WAY TO IDENTIFY GENES:
-import bisect
 import os
 import sys
 from urllib.parse import unquote
 
 from SpliceGrapher.core.enum_coercion import coerce_enum
 from SpliceGrapher.core.enums import AttrKey, RecordType, Strand
+from SpliceGrapher.core.interval_helpers import (
+    InMemoryIntervalIndex,
+    interval_contains,
+    intervals_overlap,
+)
 from SpliceGrapher.shared.file_utils import ez_open
 from SpliceGrapher.shared.format_utils import comma_format
 from SpliceGrapher.shared.process_utils import getAttribute
@@ -195,7 +199,7 @@ def featureOverlaps(a, b):
     """
     if not (a and b):
         return False
-    return a.minpos <= b.minpos <= a.maxpos or b.minpos <= a.minpos <= b.maxpos
+    return intervals_overlap(a, b)
 
 
 def featureContains(a, b):
@@ -206,7 +210,7 @@ def featureContains(a, b):
     """
     if not (a and b):
         return False
-    return a.minpos <= b.minpos and a.maxpos >= b.maxpos
+    return interval_contains(a, b)
 
 
 def feature_search(features, query, lo=0, hi=None, overlap_window=8):
@@ -227,21 +231,13 @@ def feature_search(features, query, lo=0, hi=None, overlap_window=8):
     if lo > hi:
         raise ValueError("Invalid search bounds")
 
-    starts = [f.minpos for f in features]
-    idx = bisect.bisect_left(starts, query.minpos, lo=lo, hi=hi + 1)
-
-    left = max(lo, idx - overlap_window)
-    right = min(hi, idx + overlap_window)
-    for i in range(left, right + 1):
-        if featureContains(features[i], query):
-            return features[i]
-
-    pred_idx = idx - 1
-    if pred_idx < lo:
-        return features[lo]
-    if pred_idx > hi:
-        return features[hi]
-    return features[pred_idx]
+    index = InMemoryIntervalIndex(features)
+    return index.predecessor_or_containing(
+        query,
+        lo=lo,
+        hi=hi,
+        overlap_window=overlap_window,
+    )
 
 
 def featureSearch(features, query, lo=0, hi=None):
