@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import tempfile
 from collections import defaultdict
+from collections.abc import Sequence
 from pathlib import Path
 from typing import TypedDict
 
@@ -30,6 +31,22 @@ CDS_FEATURE_TYPES = {
     RecordType.THREE_PRIME_UTR,
 }
 
+# External annotation schema keys (GFF/GTF), centralized to avoid literal drift.
+TRANSCRIPT_ID_KEY = "transcript_id"
+GENE_ID_KEY = "gene_id"
+GENE_KEY = "gene"
+GENE_NAME_KEY = "gene_name"
+GENE_BIOTYPE_KEY = "gene_biotype"
+
+TRANSCRIPT_ALIAS = "transcript"
+
+TRANSCRIPT_ID_KEYS = (TRANSCRIPT_ID_KEY, AttrKey.ID, AttrKey.NAME)
+GENE_ID_KEYS = (GENE_ID_KEY, AttrKey.ID, AttrKey.NAME, GENE_KEY, GENE_NAME_KEY)
+GENE_NAME_KEYS = (AttrKey.NAME, GENE_NAME_KEY, GENE_ID_KEY)
+GENE_NOTE_KEYS = (AttrKey.NOTE, GENE_BIOTYPE_KEY)
+GENE_REFERENCE_KEYS = (GENE_ID_KEY, GENE_KEY, GENE_NAME_KEY)
+TRANSCRIPT_OR_PARENT_KEYS = (TRANSCRIPT_ID_KEY, AttrKey.PARENT, AttrKey.ID)
+
 
 class GeneRecord(TypedDict):
     id: str
@@ -47,7 +64,7 @@ def _normalize_feature_type(raw_feature_type: str) -> RecordType | None:
     normalized = raw_feature_type.strip().casefold()
     if not normalized:
         return None
-    if normalized == "transcript":
+    if normalized == TRANSCRIPT_ALIAS:
         return RecordType.MRNA
     try:
         return coerce_enum(normalized, RecordType, field="feature_type")
@@ -55,7 +72,7 @@ def _normalize_feature_type(raw_feature_type: str) -> RecordType | None:
         return None
 
 
-def _first_attr(feature: gffutils.Feature, keys: list[str]) -> str | None:
+def _first_attr(feature: gffutils.Feature, keys: Sequence[str]) -> str | None:
     """Return the first populated attribute value from ``keys``."""
     for key in keys:
         values = feature.attributes.get(key)
@@ -108,16 +125,12 @@ def _transcript_gene_map(db: gffutils.FeatureDB) -> dict[str, str]:
         if feature_type not in TRANSCRIPT_FEATURE_TYPES:
             continue
 
-        transcript_id = _first_attr(feature, ["transcript_id", "ID", "Name"]) or feature.id
+        transcript_id = _first_attr(feature, TRANSCRIPT_ID_KEYS) or feature.id
         if not transcript_id:
             continue
 
-        parents = feature.attributes.get("Parent", [])
-        gene_id: str | None = (
-            parents[0]
-            if parents
-            else _first_attr(feature, ["gene_id", "gene", "gene_name", "Name"])
-        )
+        parents = feature.attributes.get(AttrKey.PARENT, [])
+        gene_id: str | None = parents[0] if parents else _first_attr(feature, GENE_REFERENCE_KEYS)
         if not gene_id:
             continue
 
@@ -133,9 +146,7 @@ def _extract_gene_records(db: gffutils.FeatureDB) -> dict[str, GeneRecord]:
         if feature_type not in GENE_FEATURE_TYPES:
             continue
 
-        raw_gene_id = (
-            _first_attr(feature, ["gene_id", "ID", "Name", "gene", "gene_name"]) or feature.id
-        )
+        raw_gene_id = _first_attr(feature, GENE_ID_KEYS) or feature.id
         if raw_gene_id is None:
             continue
 
@@ -143,8 +154,8 @@ def _extract_gene_records(db: gffutils.FeatureDB) -> dict[str, GeneRecord]:
         chrom = feature.seqid.lower()
         strand = feature.strand if feature.strand in {"+", "-", "."} else "."
         attrs = _feature_attr_map(feature)
-        name = _first_attr(feature, ["Name", "gene_name", "gene_id"]) or raw_gene_id
-        note = _first_attr(feature, ["Note", "gene_biotype"])
+        name = _first_attr(feature, GENE_NAME_KEYS) or raw_gene_id
+        note = _first_attr(feature, GENE_NOTE_KEYS)
 
         if gene_id not in records:
             records[gene_id] = {
@@ -227,36 +238,36 @@ def _build_gene_model_from_db(db: gffutils.FeatureDB) -> GeneModel:
         feature_type = _normalize_feature_type(feature.featuretype)
 
         if feature_type in TRANSCRIPT_FEATURE_TYPES:
-            transcript_id = _first_attr(feature, ["transcript_id", "ID", "Name"]) or feature.id
+            transcript_id = _first_attr(feature, TRANSCRIPT_ID_KEYS) or feature.id
             if transcript_id:
                 transcript_meta[transcript_id] = (chrom, strand)
-                maybe_gene = _first_attr(feature, ["gene_id", "gene", "gene_name"])
-                parents = feature.attributes.get("Parent")
+                maybe_gene = _first_attr(feature, GENE_REFERENCE_KEYS)
+                parents = feature.attributes.get(AttrKey.PARENT)
                 if parents:
                     transcript_gene.setdefault(transcript_id, parents[0])
                 elif maybe_gene:
                     transcript_gene.setdefault(transcript_id, maybe_gene)
 
         if feature_type == RecordType.EXON:
-            transcript_id = _first_attr(feature, ["transcript_id", "Parent", "ID"])
+            transcript_id = _first_attr(feature, TRANSCRIPT_OR_PARENT_KEYS)
             if transcript_id is None:
                 continue
             exon_groups[transcript_id].append(feature)
             transcript_meta.setdefault(transcript_id, (chrom, strand))
-            maybe_gene = _first_attr(feature, ["gene_id", "gene", "gene_name"])
-            parents = feature.attributes.get("Parent")
+            maybe_gene = _first_attr(feature, GENE_REFERENCE_KEYS)
+            parents = feature.attributes.get(AttrKey.PARENT)
             if maybe_gene:
                 transcript_gene.setdefault(transcript_id, maybe_gene)
             elif parents and transcript_id not in transcript_gene:
                 transcript_gene[transcript_id] = parents[0]
 
         if feature_type in CDS_FEATURE_TYPES:
-            transcript_id = _first_attr(feature, ["transcript_id", "Parent", "ID"])
+            transcript_id = _first_attr(feature, TRANSCRIPT_OR_PARENT_KEYS)
             if transcript_id is None:
                 continue
             cds_groups[transcript_id].append(feature)
             transcript_meta.setdefault(transcript_id, (chrom, strand))
-            maybe_gene = _first_attr(feature, ["gene_id", "gene", "gene_name"])
+            maybe_gene = _first_attr(feature, GENE_REFERENCE_KEYS)
             if maybe_gene:
                 transcript_gene.setdefault(transcript_id, maybe_gene)
 
@@ -289,7 +300,7 @@ def _build_gene_model_from_db(db: gffutils.FeatureDB) -> GeneModel:
 
         raw_gene_id = transcript_gene.get(transcript_id)
         if raw_gene_id is None:
-            raw_gene_id = _first_attr(exons[0], ["gene_id", "gene", "gene_name"]) if exons else None
+            raw_gene_id = _first_attr(exons[0], GENE_REFERENCE_KEYS) if exons else None
         if raw_gene_id is None:
             raw_gene_id = f"gene_{transcript_id}"
         gene_id = raw_gene_id.upper()
