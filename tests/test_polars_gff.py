@@ -5,6 +5,7 @@ from pathlib import Path
 import pytest
 
 import SpliceGrapher.formats.polars_gff as polars_gff
+from SpliceGrapher.core.enums import RecordType, Strand
 
 
 def test_parse_gff_attributes_ignores_malformed_tokens_and_splits_once() -> None:
@@ -61,3 +62,34 @@ def test_load_gff_to_polars_raises_without_polars(monkeypatch, tmp_path: Path) -
 
     with pytest.raises(polars_gff.PolarsNotInstalledError):
         polars_gff.load_gff_to_polars(gff_path)
+
+
+def test_iter_gff_records_normalizes_record_type_and_strand_domains() -> None:
+    records = list(
+        polars_gff.iter_gff_records(
+            [
+                "chr1\tsource\tmRNA\t1\t10\t.\t+\t.\tID=TX1;Parent=GENE1\n",
+            ]
+        )
+    )
+
+    assert records[0]["type"] == RecordType.MRNA
+    assert records[0]["strand"] == Strand.PLUS
+
+
+def test_iter_gff_records_rejects_unknown_record_type() -> None:
+    with pytest.raises(ValueError, match="line 1: .*record_type"):
+        list(
+            polars_gff.iter_gff_records(
+                ["chr1\tsource\tunknown_type\t1\t10\t.\t+\t.\tID=TX1;Parent=GENE1\n"]
+            )
+        )
+
+
+def test_iter_gff_records_rejects_unknown_strand() -> None:
+    with pytest.raises(ValueError, match="line 1: .*strand"):
+        list(
+            polars_gff.iter_gff_records(
+                ["chr1\tsource\tgene\t1\t10\t.\t?\t.\tID=GENE1;Name=GENE1\n"]
+            )
+        )
