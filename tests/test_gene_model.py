@@ -67,7 +67,7 @@ def test_binary_search_genes_handles_large_gene_lists() -> None:
     model = GeneModel(None)
     genes = [_DummyGene(i * 10, (i * 10) + 9) for i in range(30)]
 
-    low_gene, high_gene = model.binarySearchGenes(genes, 155, 0, len(genes) - 1)
+    low_gene, high_gene = model.binary_search_genes(genes, 155, 0, len(genes) - 1)
 
     assert low_gene is genes[15]
     assert high_gene is genes[15]
@@ -75,8 +75,8 @@ def test_binary_search_genes_handles_large_gene_lists() -> None:
 
 def test_write_gff_writes_chromosome_records(tmp_path: Path) -> None:
     model = GeneModel(None)
-    model.addChromosome(1, 100, "chr1")
-    model.addGene(
+    model.add_chromosome(1, 100, "chr1")
+    model.add_gene(
         Gene(
             id="GENE1",
             note=None,
@@ -90,7 +90,7 @@ def test_write_gff_writes_chromosome_records(tmp_path: Path) -> None:
     )
 
     gff_path = tmp_path / "model.gff3"
-    model.writeGFF(str(gff_path))
+    model.write_gff(str(gff_path))
 
     lines = gff_path.read_text(encoding="utf-8").splitlines()
     expected_prefix = "Chr1\tSpliceGrapher\tchromosome\t1\t100\t.\t.\t.\tID=Chr1;Name=Chr1"
@@ -99,7 +99,7 @@ def test_write_gff_writes_chromosome_records(tmp_path: Path) -> None:
 
 def test_get_annotation_dict_ignores_malformed_tokens_and_splits_once() -> None:
     model = GeneModel(None)
-    parsed = model.getAnnotationDict("ID=GENE1;badtoken;Name=A=B;Parent=P1;=junk;")
+    parsed = model.get_annotation_dict("ID=GENE1;badtoken;Name=A=B;Parent=P1;=junk;")
 
     assert parsed == {"ID": "GENE1", "Name": "A=B", "Parent": "P1"}
 
@@ -109,7 +109,15 @@ def test_load_gene_model_rejects_unknown_record_type() -> None:
     records = ["chr1\tsource\tunknown_type\t1\t10\t.\t+\t.\tID=U1;Name=U1"]
 
     with pytest.raises(ValueError):
-        model.loadGeneModel(records)
+        model.load_gene_model(records)
+
+
+def test_legacy_camel_case_method_aliases_remain_available() -> None:
+    model = GeneModel(None)
+    assert model.addChromosome is not None
+    assert model.loadGeneModel is not None
+    assert model.makeSortedModel is not None
+    assert model.writeGFF is not None
 
 
 def test_gene_model_record_type_collections_are_enum_backed() -> None:
