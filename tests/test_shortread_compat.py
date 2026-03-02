@@ -35,3 +35,14 @@ def test_shortread_compat_round_trips_depth_file(tmp_path: Path) -> None:
     assert "chr1" in depths
     assert len(depths["chr1"]) == 5
     assert junctions == {}
+
+
+def test_shortread_compat_imports_depth_io_boundary() -> None:
+    compat_path = (
+        Path(__file__).resolve().parents[1] / "SpliceGrapher" / "formats" / "shortread_compat.py"
+    )
+    source = compat_path.read_text(encoding="utf-8")
+
+    assert "from SpliceGrapher.formats.depth_io import" in source
+    assert "def isDepthsFile(" not in source
+    assert "def readDepths(" not in source
