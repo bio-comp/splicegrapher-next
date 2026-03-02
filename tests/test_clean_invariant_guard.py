@@ -86,3 +86,50 @@ def test_find_magic_string_control_flow_flags_literal_branching() -> None:
 
     assert violations
     assert "SpliceGrapher/SpliceGraph.py:1" in violations[0]
+
+
+def test_find_manual_overlap_lines_detects_raw_coordinate_logic() -> None:
+    module = _load_guard_module()
+    sources = {
+        "SpliceGrapher/SpliceGraph.py": (
+            "if a.minpos < b.maxpos and a.maxpos > b.minpos:\n    pass\n"
+        ),
+    }
+
+    found = module.find_manual_overlap_lines(
+        source_by_path=sources,
+        protected_paths=("SpliceGrapher/SpliceGraph.py",),
+    )
+
+    assert found["SpliceGrapher/SpliceGraph.py"] == {
+        "if a.minpos < b.maxpos and a.maxpos > b.minpos:"
+    }
+
+
+def test_detect_manual_overlap_growth_rejects_new_lines() -> None:
+    module = _load_guard_module()
+    baseline = {"a.py": {"if x.minpos < y.maxpos and x.maxpos > y.minpos:"}}
+    current = {
+        "a.py": {
+            "if x.minpos < y.maxpos and x.maxpos > y.minpos:",
+            "return x.maxpos >= y.minpos and x.minpos <= y.maxpos",
+        }
+    }
+
+    violations = module.detect_manual_overlap_growth(current=current, baseline=baseline)
+
+    assert len(violations) == 1
+    assert "unexpected manual-overlap" in violations[0]
+
+
+def test_detect_manual_overlap_growth_allows_removal() -> None:
+    module = _load_guard_module()
+    baseline = {
+        "a.py": {
+            "if x.minpos < y.maxpos and x.maxpos > y.minpos:",
+            "return x.maxpos >= y.minpos and x.minpos <= y.maxpos",
+        }
+    }
+    current = {"a.py": {"if x.minpos < y.maxpos and x.maxpos > y.minpos:"}}
+
+    assert module.detect_manual_overlap_growth(current=current, baseline=baseline) == []

@@ -54,6 +54,12 @@ class InMemoryIntervalIndex(Sequence[_IntervalT]):
 
         self._intervals = tuple(intervals)
         self._starts = tuple(interval.minpos for interval in self._intervals)
+        prefix_maxes: list[int] = []
+        running_max = self._intervals[0].maxpos
+        for interval in self._intervals:
+            running_max = max(running_max, interval.maxpos)
+            prefix_maxes.append(running_max)
+        self._prefix_maxes = tuple(prefix_maxes)
 
     @overload
     def __getitem__(self, index: int) -> _IntervalT: ...
@@ -107,7 +113,9 @@ class InMemoryIntervalIndex(Sequence[_IntervalT]):
     ) -> list[_IntervalT]:
         """Return all indexed intervals that overlap ``query``."""
         idx = bisect.bisect_left(self._starts, query.minpos)
-        scan_start = max(0, idx - 1)
+        scan_start = idx
+        while scan_start > 0 and self._prefix_maxes[scan_start - 1] >= query.minpos:
+            scan_start -= 1
         result: list[_IntervalT] = []
         for interval in self._intervals[scan_start:]:
             if interval.minpos > query.maxpos:

@@ -32,6 +32,17 @@ jobs:
       - name: Enforce clean-invariant ratchet
         run: uv run python scripts/ci/check_clean_invariant.py
 
+      - name: Enforce interval overlap benchmark/parity gate
+        run: |
+          uv run python scripts/benchmarks/run_interval_overlap_benchmarks.py \
+            --interval-count 1200 \
+            --query-count 1200 \
+            --iterations 2 \
+            --assert-threshold \
+            --max-slowdown-ratio 1.35 \
+            --json-out /tmp/interval_overlap_benchmark_results.json \
+            --markdown-out /tmp/interval_overlap_benchmark_results.md
+
       - name: Ruff lint
         run: uv run ruff check .
 
