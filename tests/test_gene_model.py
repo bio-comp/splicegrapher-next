@@ -42,6 +42,16 @@ def test_feature_search_snake_case_api_returns_expected_match() -> None:
     assert feature_search(features, query) is features[1]
 
 
+def test_feature_overlap_and_contains_match_interval_helper_semantics() -> None:
+    left = Exon(10, 20, "chr1", "+")
+    right = Exon(20, 30, "chr1", "+")
+    nested = Exon(12, 18, "chr1", "+")
+
+    assert gm.featureOverlaps(left, right)
+    assert gm.featureContains(left, nested)
+    assert not gm.featureContains(left, right)
+
+
 def test_feature_search_returns_preceding_feature_when_not_contained() -> None:
     features = [
         Exon(1, 10, "chr1", "+"),

@@ -6,6 +6,7 @@ import sys
 
 from SpliceGrapher.core.enum_coercion import coerce_enum
 from SpliceGrapher.core.enums import AttrKey, EdgeType, NodeDisposition, RecordType, Strand
+from SpliceGrapher.core.interval_helpers import interval_contains, intervals_overlap
 from SpliceGrapher.shared.collection_utils import as_list
 from SpliceGrapher.shared.file_utils import ez_open
 from SpliceGrapher.shared.format_utils import list_string
@@ -120,13 +121,13 @@ def acceptor(node):
 def containsEdge(node, edge):
     """Returns true if the Node contains the given Edge; false otherwise.  Note
     that the edge must be completely contained within the node (<,>)."""
-    return node.minpos < edge.minpos and edge.maxpos < node.maxpos
+    return interval_contains(node, edge, strict=True)
 
 
 def containsNode(edge, node):
     """Returns true if the Edge contains the given Node; false otherwise.  Note
     that the node must be completely contained within the edge (<,>)."""
-    return edge.minpos < node.minpos and node.maxpos < edge.maxpos
+    return interval_contains(edge, node, strict=True)
 
 
 def childEdges(n):
@@ -157,7 +158,7 @@ def intronSet(G):
 
 def overlap(a, b):
     """Returns true if the two nodes overlap and are distinct; false otherwise."""
-    return a.id != b.id and a.maxpos > b.minpos and a.minpos < b.maxpos
+    return a.id != b.id and intervals_overlap(a, b, inclusive=False)
 
 
 def overlapsAll(A, nodeList):
