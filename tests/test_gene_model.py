@@ -165,3 +165,81 @@ def test_basefeature_hash_matches_equality_contract() -> None:
 
     assert left == right
     assert hash(left) == hash(right)
+
+
+def test_load_gene_model_delegates_to_parser_boundary(monkeypatch: pytest.MonkeyPatch) -> None:
+    model = GeneModel(None)
+    records = ["chr1\tsrc\tgene\t1\t10\t.\t+\t.\tID=GENE1;Name=GENE1"]
+    calls: dict[str, object] = {}
+
+    from SpliceGrapher.formats.parsers import gene_model_gff
+
+    def _fake_loader(
+        model_arg: GeneModel, gff_records_arg: gm.GffRecordSource, **kwargs: object
+    ) -> None:
+        calls["model"] = model_arg
+        calls["records"] = gff_records_arg
+        calls["kwargs"] = kwargs
+
+    monkeypatch.setattr(gene_model_gff, "load_gene_model_records", _fake_loader)
+
+    model.load_gene_model(records, verbose=True)
+
+    assert calls["model"] is model
+    assert calls["records"] == records
+    assert calls["kwargs"] == {"verbose": True}
+
+
+def test_write_gff_delegates_to_writer_boundary(monkeypatch: pytest.MonkeyPatch) -> None:
+    import io
+
+    model = GeneModel(None)
+    out_stream = io.StringIO()
+    calls: dict[str, object] = {}
+
+    from SpliceGrapher.formats.writers import gene_model
+
+    def _fake_write_gff(
+        model_arg: GeneModel, gff_path_arg: str | io.StringIO, **kwargs: object
+    ) -> None:
+        calls["model"] = model_arg
+        calls["path"] = gff_path_arg
+        calls["kwargs"] = kwargs
+
+    monkeypatch.setattr(gene_model, "write_gff", _fake_write_gff)
+
+    model.write_gff(out_stream, verbose=True)
+
+    assert calls["model"] is model
+    assert calls["path"] is out_stream
+    assert calls["kwargs"] == {"verbose": True}
+
+
+def test_write_gtf_delegates_to_writer_boundary(monkeypatch: pytest.MonkeyPatch) -> None:
+    import io
+
+    model = GeneModel(None)
+    out_stream = io.StringIO()
+    calls: dict[str, object] = {}
+
+    from SpliceGrapher.formats.writers import gene_model
+
+    def _fake_write_gtf(
+        model_arg: GeneModel,
+        gtf_path_arg: str | io.StringIO,
+        geneFilter: gm.GeneFilter = gm.defaultGeneFilter,
+        **kwargs: object,
+    ) -> None:
+        calls["model"] = model_arg
+        calls["path"] = gtf_path_arg
+        calls["gene_filter"] = geneFilter
+        calls["kwargs"] = kwargs
+
+    monkeypatch.setattr(gene_model, "write_gtf", _fake_write_gtf)
+
+    model.write_gtf(out_stream, verbose=True)
+
+    assert calls["model"] is model
+    assert calls["path"] is out_stream
+    assert calls["gene_filter"] is gm.defaultGeneFilter
+    assert calls["kwargs"] == {"verbose": True}
