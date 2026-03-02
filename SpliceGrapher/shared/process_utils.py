@@ -1,35 +1,40 @@
 """Process and command execution helpers extracted from shared.utils."""
 
+from __future__ import annotations
+
 import os
 import shlex
 import subprocess
 import sys
-from collections.abc import Sequence
-from typing import Any
+from collections.abc import Iterator, Sequence
+from typing import BinaryIO, TextIO, TypeVar, cast
 
 from SpliceGrapher.shared.format_utils import time_string
 from SpliceGrapher.shared.logging_utils import get_logger
 
 LOGGER = get_logger(__name__)
+AttrT = TypeVar("AttrT")
+SubprocessStream = int | TextIO | BinaryIO | None
+CompletedProcessResult = subprocess.CompletedProcess[str] | subprocess.CompletedProcess[bytes]
 
 
-def getAttribute(key, default, **args):
+def getAttribute(key: str, default: AttrT, **args: object) -> AttrT:
     """Returns the value for the given key in the arguments dict, if found;
     otherwise returns default value."""
-    return default if key not in args else args[key]
+    return default if key not in args else cast(AttrT, args[key])
 
 
-def idFactory(pfx="", initial=1):
+def idFactory(pfx: str = "", initial: int = 1) -> Iterator[str]:
     """Generates unique ids using the given prefix.  For example,
     idFactory('ev_') will generate 'ev_1', 'ev_2', ..."""
     prefix = pfx if pfx else ""
     counter = initial
     while True:
-        yield "%s%d" % (prefix, counter)
+        yield f"{prefix}{counter}"
         counter += 1
 
 
-def logMessage(s, logstream=None):
+def logMessage(s: str, logstream: TextIO | None = None) -> None:
     """Allows log messages to be output both to stderr and a log file."""
     LOGGER.info("process_message", message=s.rstrip("\n"))
     sys.stderr.write(s)
@@ -42,10 +47,10 @@ def run_command(
     *,
     shell: bool = False,
     check: bool = False,
-    stdout: Any = None,
-    stderr: Any = None,
+    stdout: SubprocessStream = None,
+    stderr: SubprocessStream = None,
     text: bool = False,
-) -> subprocess.CompletedProcess[Any]:
+) -> CompletedProcessResult:
     """Run a command with explicit shell behavior."""
     command_args: str | list[str]
     if isinstance(command, str):
@@ -63,7 +68,7 @@ def run_command(
     )
 
 
-def runCommand(s, **args):
+def runCommand(s: str, **args: object) -> None:
     """Announces a command runs it.."""
     logstream = getAttribute("logstream", None, **args)
     debug = getAttribute("debug", False, **args)
@@ -92,10 +97,10 @@ def runCommand(s, **args):
     if exitOnError and retcode != 0:
         LOGGER.error("command_failed", command=s, return_code=retcode)
         code_type = "signal" if retcode < 0 else "code"
-        raise Exception("Error running command: returned %d %s\n%s" % (retcode, code_type, s))
+        raise RuntimeError(f"Error running command: returned {retcode} {code_type}\n{s}")
 
 
-def writeStartupMessage():
+def writeStartupMessage() -> None:
     """Standardized startup message for all scripts."""
     base = os.path.basename(sys.argv[0])
     LOGGER.info("startup", script=base)
