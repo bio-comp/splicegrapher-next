@@ -17,6 +17,13 @@ from SpliceGrapher.core.interval_helpers import (
     interval_contains,
     intervals_overlap,
 )
+from SpliceGrapher.formats.parsers.gene_model_gff import load_gene_model_records
+from SpliceGrapher.formats.writers.gene_model import (
+    write_gff as write_gene_model_gff,
+)
+from SpliceGrapher.formats.writers.gene_model import (
+    write_gtf as write_gene_model_gtf,
+)
 from SpliceGrapher.shared.process_utils import getAttribute
 from SpliceGrapher.shared.progress import ProgressIndicator
 
@@ -244,20 +251,18 @@ def feature_search(
     Returns either the feature that contains ``query`` or the feature that
     would immediately precede it.
     """
-    feature_list = list(features)
-
-    if not feature_list:
+    if not features:
         raise ValueError("Cannot search an empty feature list")
 
     if hi is None:
-        hi = len(feature_list) - 1
+        hi = len(features) - 1
 
     lo = max(0, lo)
-    hi = min(hi, len(feature_list) - 1)
+    hi = min(hi, len(features) - 1)
     if lo > hi:
         raise ValueError("Invalid search bounds")
 
-    index = InMemoryIntervalIndex(feature_list)
+    index = InMemoryIntervalIndex(features)
     return index.predecessor_or_containing(
         query,
         lo=lo,
@@ -452,7 +457,7 @@ class Isoform(BaseFeature):
         self.maxpos = max(self.maxpos, exon.maxpos)
         return True
 
-    def addFeature(self, feature: BaseFeature) -> None:
+    def add_feature(self, feature: BaseFeature) -> None:
         if feature.strand != self.strand:
             raise ValueError(
                 f"ERROR: feature strand '{feature.strand}' does not match "
@@ -469,6 +474,9 @@ class Isoform(BaseFeature):
         self.minpos = min(self.minpos, feature.minpos)
         self.maxpos = max(self.maxpos, feature.maxpos)
         self.features.append(feature)
+
+    def addFeature(self, feature: BaseFeature) -> None:
+        self.add_feature(feature)
 
     def detailString(self):
         return (
@@ -828,7 +836,6 @@ class Gene(BaseFeature):
         self.cds = []
         self.exonMap = {}
         self.cdsMap = {}
-        self.string = ""
 
         # Codons for all transcripts/mRNA, one entry per transcript
         self.start_codons = {}
@@ -843,59 +850,67 @@ class Gene(BaseFeature):
         Returns a list of acceptors for this gene.
         """
         acceptorSet = set()
-        for k in self.isoforms.keys():
-            acceptorSet.update(self.isoforms[k].acceptorList())
-        for k in self.mrna.keys():
-            acceptorSet.update(self.mrna[k].acceptorList())
+        for transcript in self._iter_transcripts():
+            acceptorSet.update(transcript.acceptorList())
         return sorted(list(acceptorSet), reverse=(self.strand == "-"))
 
-    def addCDS(self, newmRNA, newCDS):
+    def _iter_isoforms(self) -> Iterable[Isoform]:
+        return self.isoforms.values()
+
+    def _iter_mrna_records(self) -> Iterable[mRNA]:
+        return self.mrna.values()
+
+    def _iter_transcripts(self) -> Iterable[Isoform | mRNA]:
+        yield from self._iter_isoforms()
+        yield from self._iter_mrna_records()
+
+    def add_cds(self, new_mrna: mRNA, new_cds: CDS) -> bool:
         """
         Adds a CDS to the gene if it's unique.
         Returns True if the CDS was added; false otherwise.
         """
         result = False
-        cdsTuple = (newCDS.featureType, newCDS.minpos, newCDS.maxpos)
+        cdsTuple = (new_cds.featureType, new_cds.minpos, new_cds.maxpos)
         try:
             cds = self.cdsMap[cdsTuple]
         except KeyError:
-            cds = newCDS
+            cds = new_cds
             self.cds.append(cds)
             self.cdsMap[cdsTuple] = cds
             self.minpos = min(self.minpos, cds.minpos)
             self.maxpos = max(self.maxpos, cds.maxpos)
             result = True
 
-        mrna = self.addmRNA(newmRNA)
+        mrna = self.add_mrna(new_mrna)
         mrna.addCDS(cds)
         self.start_codons[mrna.id] = mrna.startCodon()
         self.end_codons[mrna.id] = mrna.endCodon()
         return result
 
-    def addExon(self, newIsoform, newExon):
+    def add_exon(self, new_isoform: Isoform, new_exon: Exon) -> bool:
         """
         Adds an exon to the gene if it's unique.
         Returns True if the exon was added; false otherwise.
         """
-        if newIsoform is None:
-            raise ValueError("Illegal null isoform in exon {}".format(newExon))
+        if new_isoform is None:
+            raise ValueError("Illegal null isoform in exon {}".format(new_exon))
         result = False
-        posTuple = (newExon.minpos, newExon.maxpos)
+        posTuple = (new_exon.minpos, new_exon.maxpos)
         try:
             exon = self.exonMap[posTuple]
         except KeyError:
-            exon = newExon
+            exon = new_exon
             self.exons.append(exon)
             self.exonMap[posTuple] = exon
             self.minpos = min(self.minpos, exon.minpos)
             self.maxpos = max(self.maxpos, exon.maxpos)
             result = True
 
-        isoform = self.addIsoform(newIsoform)
+        isoform = self.add_isoform(new_isoform)
         isoform.addExon(exon)
         return result
 
-    def addFeature(self, feature: BaseFeature) -> None:
+    def add_feature(self, feature: BaseFeature) -> None:
         if feature.strand != self.strand:
             raise ValueError(
                 f"ERROR: feature strand '{feature.strand}' does not match "
@@ -913,13 +928,28 @@ class Gene(BaseFeature):
         self.maxpos = max(self.maxpos, feature.maxpos)
         self.features.append(feature)
 
-    def addIsoform(self, isoform):
+    def add_isoform(self, isoform: Isoform) -> Isoform:
         isoform.setParent(self)
         return self.isoforms.setdefault(isoform.id, isoform)
 
-    def addmRNA(self, mrna):
+    def add_mrna(self, mrna: mRNA) -> mRNA:
         mrna.parent = self
         return self.mrna.setdefault(mrna.id, mrna)
+
+    def addCDS(self, newmRNA, newCDS):
+        return self.add_cds(newmRNA, newCDS)
+
+    def addExon(self, newIsoform, newExon):
+        return self.add_exon(newIsoform, newExon)
+
+    def addFeature(self, feature: BaseFeature) -> None:
+        self.add_feature(feature)
+
+    def addIsoform(self, isoform):
+        return self.add_isoform(isoform)
+
+    def addmRNA(self, mrna):
+        return self.add_mrna(mrna)
 
     def detailString(self):
         result = (
@@ -935,10 +965,8 @@ class Gene(BaseFeature):
         Returns a list of donors for this gene.
         """
         donorSet = set()
-        for k in self.isoforms.keys():
-            donorSet.update(self.isoforms[k].donorList())
-        for k in self.mrna.keys():
-            donorSet.update(self.mrna[k].donorList())
+        for transcript in self._iter_transcripts():
+            donorSet.update(transcript.donorList())
         return sorted(list(donorSet), reverse=(self.strand == "-"))
 
     def endCodons(self):
@@ -954,16 +982,10 @@ class Gene(BaseFeature):
         Returns a list of duples containing start/end positions of introns in this gene.
         """
         result = {}
-        for iid in self.isoforms.keys():
-            exons = self.isoforms[iid].sortedExons()
+        for transcript in self._iter_transcripts():
+            exons = transcript.sortedExons()
             for i in range(1, len(exons)):
                 key = (exons[i - 1].end(), exons[i].start())
-                result[key] = 1
-
-        for mid in self.mrna.keys():
-            cds = self.mrna[mid].sortedExons()
-            for i in range(1, len(cds)):
-                key = (cds[i - 1].end(), cds[i].start())
                 result[key] = 1
 
         return result.keys()
@@ -1079,14 +1101,14 @@ class Gene(BaseFeature):
     def sortedExons(self):
         """Returns a list of all exons inferred by the gene model, sorted 5' to 3'."""
         tmpset = set()
-        for iid in self.isoforms.keys():
-            tmpset.update(self.isoforms[iid].sortedExons())
+        for isoform in self._iter_isoforms():
+            tmpset.update(isoform.sortedExons())
 
         # Avoid returning duplicates:
         stored = set([(e.minpos, e.maxpos) for e in tmpset])
-        for mid in self.mrna.keys():
+        for mrna_rec in self._iter_mrna_records():
             tmpset.update(
-                [e for e in self.mrna[mid].sortedExons() if (e.minpos, e.maxpos) not in stored]
+                [e for e in mrna_rec.sortedExons() if (e.minpos, e.maxpos) not in stored]
             )
 
         result = list(tmpset)
@@ -1099,13 +1121,11 @@ class Gene(BaseFeature):
         return self.start_codons
 
     def __str__(self):
-        if not self.string:
-            self.string = (
-                f"{self.id} ({self.chromosome}): {self.start()}-{self.end()} "
-                f"(len={len(self)}, strand={self.strand}), {len(self.cds) + len(self.exons)} "
-                f"exons/cds, range {self.minpos} to {self.maxpos}"
-            )
-        return self.string
+        return (
+            f"{self.id} ({self.chromosome}): {self.start()}-{self.end()} "
+            f"(len={len(self)}, strand={self.strand}), {len(self.cds) + len(self.exons)} "
+            f"exons/cds, range {self.minpos} to {self.maxpos}"
+        )
 
 
 class PseudoGene(Gene):
@@ -1121,7 +1141,6 @@ class PseudoGene(Gene):
         self.isoforms = {}
         self.exonMap = {}
         self.cdsMap = {}
-        self.string = ""
 
         self.start_codons = {}
         self.end_codons = {}
@@ -1131,7 +1150,15 @@ class PseudoGene(Gene):
 
 
 class GeneModel(object):
-    def __init__(self, gffPath: GffRecordSource | None, **args: object) -> None:
+    def __init__(
+        self,
+        gff_path: GffRecordSource | None,
+        *,
+        require_notes: bool = False,
+        chromosomes: Sequence[str] | str | None = None,
+        verbose: bool = False,
+        ignore_errors: bool = False,
+    ) -> None:
         """Instantiates a GeneModel object.  If a path is provided, this will
         load gene models from the given file."""
         # 2-dimensional model indexed by chromosome then gene
@@ -1142,14 +1169,20 @@ class GeneModel(object):
         self.mRNAforms: dict[str, dict[str, mRNA]] = {}
         self.sorted: dict[str, dict[str, list[Gene]]] = {}
 
-        if gffPath:  # Load gene models from a file
-            if isinstance(gffPath, str) and not os.path.exists(gffPath):
-                raise ValueError("Gene model file not found: {}".format(gffPath))
+        if gff_path:  # Load gene models from a file
+            if isinstance(gff_path, str) and not os.path.exists(gff_path):
+                raise ValueError("Gene model file not found: {}".format(gff_path))
 
-            self.load_gene_model(gffPath, **args)
+            self.load_gene_model(
+                gff_path,
+                require_notes=require_notes,
+                chromosomes=chromosomes,
+                verbose=verbose,
+                ignore_errors=ignore_errors,
+            )
 
             if not self.model:
-                raise ValueError("No gene models found in {}".format(gffPath))
+                raise ValueError("No gene models found in {}".format(gff_path))
             self.make_sorted_model()
 
     def __contains__(self, gene: object) -> bool:
@@ -1243,10 +1276,12 @@ class GeneModel(object):
         return [g.id for g in self.allGenes.values() if geneFilter(g)]
 
     def get_all_genes(
-        self, geneFilter: GeneFilter = defaultGeneFilter, **args: object
+        self,
+        geneFilter: GeneFilter = defaultGeneFilter,
+        *,
+        verbose: bool = False,
     ) -> list[Gene]:
         """Returns a list of all genes stored."""
-        verbose = getAttribute("verbose", False, **args)
         indicator = ProgressIndicator(10000, verbose=verbose)
         result = []
         for g in self.allGenes.values():
@@ -1352,13 +1387,16 @@ class GeneModel(object):
         return None
 
     def get_gene_records(
-        self, chrom: str, geneFilter: GeneFilter = defaultGeneFilter, **args: object
+        self,
+        chrom: str,
+        geneFilter: GeneFilter = defaultGeneFilter,
+        *,
+        verbose: bool = False,
     ) -> list[Gene]:
         """
         Returns a list of all gene instances represented within a given chromosome.
         The gene list may be filtered by changing the geneFilter function.
         """
-        verbose = getAttribute("verbose", False, **args)
         try:
             # return [g for g in self.model[chrom.lower()].values() if geneFilter(g)]
             indicator = ProgressIndicator(10000, verbose=verbose)
@@ -1423,62 +1461,29 @@ class GeneModel(object):
         return result
 
     def get_parent(
-        self, s: str, chrom: str, searchGenes: bool = True, searchmRNA: bool = True
+        self,
+        s: str,
+        chrom: str,
+        searchGenes: bool = True,
+        searchmRNA: bool = True,
     ) -> Gene | mRNA | None:
         """
         Parent identifiers are not stored in a consistent manner.  We may have
         'AT1G01160', 'AT1G01160.1' or '12345.AT1G01160' or possibly something else.
         This method looks for the most specific candidate name to identify a record's parent.
         """
+        parent_key = s.upper()
+        chrom_key = chrom.lower()
 
-        def getSubnames(fullString: str, d: str) -> list[str]:
-            parts = fullString.split(d)
-            result = []
-            # most-to-least specific:
-            # 'a-b-c-d' -> ['a-b-c', 'a-b', 'a']
-            # 'a,b,c' -> ['a,b', 'a']
-            for i in range(len(parts) - 1, 0, -1):
-                result.append(d.join(parts[:i]))
-            return result
-
-        parentString = s.upper()
-        # First try the easiest method:
         if searchmRNA:
-            try:
-                return self.mRNAforms[chrom][parentString]
-            except KeyError:
-                pass
+            chrom_forms = self.mRNAforms.get(chrom_key)
+            if chrom_forms is not None and parent_key in chrom_forms:
+                return chrom_forms[parent_key]
 
         if searchGenes:
-            try:
-                return self.model[chrom][parentString]
-            except KeyError:
-                pass
-
-        # Iterate over a set of known delimiters
-        delim = [c for c in FORM_DELIMITERS if c in parentString]
-        candidates = [parentString]
-        for c in delim:
-            candidates += getSubnames(parentString, c)
-
-        # First try known mRNA records
-        if searchmRNA and chrom in self.mRNAforms:
-            commasep = parentString.split(",")
-            additional = list(commasep)
-            for c in commasep:
-                additional += c.split(".")
-            candidates += additional
-            for c in candidates:
-                try:
-                    return self.mRNAforms[chrom][c]
-                except KeyError:
-                    pass
-
-        # Next try known genes;
-        if searchGenes and chrom in self.model:
-            for c in candidates:
-                if c in self.model[chrom]:
-                    return self.model[chrom][c]
+            chrom_genes = self.model.get(chrom_key)
+            if chrom_genes is not None and parent_key in chrom_genes:
+                return chrom_genes[parent_key]
         return None
 
     def get_record_types(self) -> list[RecordType]:
@@ -1486,31 +1491,47 @@ class GeneModel(object):
         return [k for k in self.foundTypes if self.foundTypes[k]]
 
     def isoform_dict(
-        self, geneFilter: GeneFilter = defaultGeneFilter, **args: object
+        self,
+        geneFilter: GeneFilter = defaultGeneFilter,
+        *,
+        verbose: bool = False,
     ) -> dict[str, set[str]]:
         """Returns a dictionary that maps gene names to their corresponding
         isoform identifiers.  Each gene is associated with a set of isoform ids."""
         result: dict[str, set[str]] = {}
-        for g in self.get_all_genes(geneFilter=geneFilter, **args):
+        for g in self.get_all_genes(geneFilter=geneFilter, verbose=verbose):
             result[g.id] = set(list(g.mrna.keys()) + list(g.isoforms.keys()))
         return result
 
-    def load_gene_model(self, gffRecords: GffRecordSource, **args: object) -> None:
+    def load_gene_model(
+        self,
+        gff_records: GffRecordSource,
+        *,
+        require_notes: bool = False,
+        chromosomes: Sequence[str] | str | None = None,
+        verbose: bool = False,
+        ignore_errors: bool = False,
+    ) -> None:
         """
         Reads a tab-delimited gene annotation GFF file and stores information
         on chromosomes, the genes within each chromosome and exons within each gene.
 
         Parameters:
-          'gffRecords'   - source of GFF records; may be a file path, a file stream
+          'gff_records'  - source of GFF records; may be a file path, a file stream
                            or a list/set of strings
-          'requireNotes' - require annotations for all gene records (default=False)
+          'require_notes' - require annotations for all gene records (default=False)
           'chromosomes'  - chromosome name or list of chromosomes to store (default=all)
           'verbose'      - provide verbose feedback (default=False)
-          'ignoreErrors' - ignore error conditions (default=False)
+          'ignore_errors' - ignore error conditions (default=False)
         """
-        from SpliceGrapher.formats.parsers.gene_model_gff import load_gene_model_records
-
-        load_gene_model_records(self, gffRecords, **args)
+        load_gene_model_records(
+            self,
+            gff_records,
+            require_notes=require_notes,
+            chromosomes=chromosomes,
+            verbose=verbose,
+            ignore_errors=ignore_errors,
+        )
 
     def make_sorted_model(self) -> None:
         self.sorted = {}
@@ -1527,19 +1548,37 @@ class GeneModel(object):
             for g in geneList:
                 self.sorted[chrom][g.strand].append(g)
 
-    def write_gff(self, gffPath: str | TextIO, **args: object) -> None:
+    def write_gff(
+        self,
+        gff_path: str | TextIO,
+        *,
+        geneFilter: GeneFilter = defaultGeneFilter,
+        geneSet: set[str] | list[str] | tuple[str, ...] | None = None,
+        verbose: bool = False,
+    ) -> None:
         """Writes a complete gene model out to a GFF file."""
-        from SpliceGrapher.formats.writers import gene_model
-
-        gene_model.write_gff(self, gffPath, **args)
+        write_gene_model_gff(
+            self,
+            gff_path,
+            gene_filter=geneFilter,
+            gene_set=geneSet,
+            verbose=verbose,
+        )
 
     def write_gtf(
-        self, gtfPath: str | TextIO, geneFilter: GeneFilter = defaultGeneFilter, **args: object
+        self,
+        gtf_path: str | TextIO,
+        *,
+        geneFilter: GeneFilter = defaultGeneFilter,
+        verbose: bool = False,
     ) -> None:
         """Writes a complete gene model out to a GTF file."""
-        from SpliceGrapher.formats.writers import gene_model
-
-        gene_model.write_gtf(self, gtfPath, geneFilter=geneFilter, **args)
+        write_gene_model_gtf(
+            self,
+            gtf_path,
+            gene_filter=geneFilter,
+            verbose=verbose,
+        )
 
     # Legacy camelCase compatibility aliases (keep external API stable).
     addChromosome = add_chromosome

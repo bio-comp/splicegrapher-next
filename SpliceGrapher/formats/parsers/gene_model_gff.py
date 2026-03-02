@@ -3,58 +3,111 @@
 from __future__ import annotations
 
 import sys
-from collections.abc import Iterable
+from collections.abc import Iterable, Sequence
 from typing import TYPE_CHECKING
 
 from SpliceGrapher.core.enum_coercion import coerce_enum
 from SpliceGrapher.core.enums import RecordType, Strand
 from SpliceGrapher.shared.file_utils import ez_open
 from SpliceGrapher.shared.format_utils import comma_format
-from SpliceGrapher.shared.process_utils import getAttribute
 from SpliceGrapher.shared.progress import ProgressIndicator
 
 if TYPE_CHECKING:
     from SpliceGrapher.formats.GeneModel import GeneModel, GffRecordSource
 
 
+def _subnames(full_string: str, delimiter: str) -> list[str]:
+    parts = full_string.split(delimiter)
+    return [delimiter.join(parts[:i]) for i in range(len(parts) - 1, 0, -1)]
+
+
+def _resolve_parent(
+    model: "GeneModel",
+    parent_id: str,
+    chrom: str,
+    *,
+    search_genes: bool = True,
+    search_mrna: bool = True,
+):
+    import SpliceGrapher.formats.GeneModel as gm
+
+    parent_string = parent_id.upper()
+    chrom_key = chrom.lower()
+
+    # First try exact lookup on model-owned IDs.
+    exact = model.get_parent(
+        parent_string,
+        chrom_key,
+        searchGenes=search_genes,
+        searchmRNA=search_mrna,
+    )
+    if exact is not None:
+        return exact
+
+    delimiters = [c for c in gm.FORM_DELIMITERS if c in parent_string]
+    candidates = [parent_string]
+    for delimiter in delimiters:
+        candidates.extend(_subnames(parent_string, delimiter))
+
+    if search_mrna and chrom_key in model.mRNAforms:
+        comma_sep = parent_string.split(",")
+        additional = list(comma_sep)
+        for item in comma_sep:
+            additional.extend(item.split("."))
+        candidates.extend(additional)
+        for candidate in candidates:
+            transcript = model.mRNAforms[chrom_key].get(candidate)
+            if transcript is not None:
+                return transcript
+
+    if search_genes and chrom_key in model.model:
+        for candidate in candidates:
+            gene = model.model[chrom_key].get(candidate)
+            if gene is not None:
+                return gene
+    return None
+
+
 def load_gene_model_records(
-    model: "GeneModel", gffRecords: "GffRecordSource", **args: object
+    model: "GeneModel",
+    gff_records: "GffRecordSource",
+    *,
+    require_notes: bool = False,
+    chromosomes: Sequence[str] | str | None = None,
+    verbose: bool = False,
+    ignore_errors: bool = False,
 ) -> None:
     """Load gene model records from GFF-like input into ``model``."""
     import SpliceGrapher.formats.GeneModel as gm
 
-    verbose = getAttribute("verbose", False, **args)
-    requireNotes = getAttribute("requireNodes", False, **args)
-    ignoreErrors = getAttribute("ignoreErrors", False, **args)
-    chromosomes: list[str] | None = None
+    chromosomes_list: list[str] | None = None
 
     # Convenience method for handling exceptions that could be ignored:
     def conditionalException(message: str) -> None:
-        if not ignoreErrors:
+        if not ignore_errors:
             raise RuntimeError(message)
 
-    if isinstance(gffRecords, str):
+    if isinstance(gff_records, str):
         if verbose:
-            sys.stderr.write(f"Loading and validating gene models in {gffRecords}\n")
-        instream: Iterable[str] = ez_open(gffRecords)
-    elif isinstance(gffRecords, (list, set, tuple)):
+            sys.stderr.write(f"Loading and validating gene models in {gff_records}\n")
+        instream: Iterable[str] = ez_open(gff_records)
+    elif isinstance(gff_records, (list, set, tuple)):
         if verbose:
-            sys.stderr.write(f"Loading and validating gene models in {len(gffRecords)} records\n")
-        instream = gffRecords
+            sys.stderr.write(f"Loading and validating gene models in {len(gff_records)} records\n")
+        instream = gff_records
     else:
         raise ValueError(
             "Unrecognized GFF record source "
-            f"({type(gffRecords).__name__}); must be file path or a list/set of strings."
+            f"({type(gff_records).__name__}); must be file path or a list/set of strings."
         )
 
-    if "chromosomes" in args:
-        chrParam = args["chromosomes"]
-        if isinstance(chrParam, (list, tuple, set)):
-            chromosomes = [str(s).lower() for s in chrParam]
-        elif isinstance(chrParam, str) and chrParam:
-            chromosomes = [chrParam.lower()]
-        if verbose and chromosomes is not None:
-            sys.stderr.write(f"GeneModel loading chromosomes {','.join(chromosomes)}\n")
+    if chromosomes is not None:
+        if isinstance(chromosomes, str):
+            chromosomes_list = [chromosomes.lower()] if chromosomes else None
+        else:
+            chromosomes_list = [str(s).lower() for s in chromosomes]
+        if verbose and chromosomes_list is not None:
+            sys.stderr.write(f"GeneModel loading chromosomes {','.join(chromosomes_list)}\n")
 
     model.model = {}
     model.mRNAforms = {}
@@ -94,7 +147,7 @@ def load_gene_model_records(
 
         annots = model.get_annotation_dict(parts[-1])
         chrName = parts[0].lower()
-        if chromosomes and chrName not in chromosomes:
+        if chromosomes_list and chrName not in chromosomes_list:
             continue
 
         try:
@@ -127,7 +180,7 @@ def load_gene_model_records(
                 name = model.clean_name(name)
 
             note = model.get_annotation(gm.NOTE_FIELD, annots)
-            if not note and requireNotes:
+            if not note and require_notes:
                 continue
 
             if strand not in gm.VALID_STRANDS:
@@ -169,7 +222,7 @@ def load_gene_model_records(
                 if (key not in annots) or (annots[key] in tried):
                     continue
                 isoName = annots[key]
-                parent_record = model.get_parent(isoName, chrName)
+                parent_record = _resolve_parent(model, isoName, chrName)
                 if parent_record:
                     break
                 tried.add(isoName)
@@ -226,7 +279,7 @@ def load_gene_model_records(
                 isoCount += 1
 
             exon = gm.Exon(startPos, endPos, chrName, strand, annots)
-            exonCount = exonCount + 1 if gene_obj.addExon(isoform, exon) else exonCount
+            exonCount = exonCount + 1 if gene_obj.add_exon(isoform, exon) else exonCount
 
         elif recType in [RecordType.MRNA, RecordType.PSEUDOGENIC_TRANSCRIPT]:
             if chrName not in model.model:
@@ -245,14 +298,14 @@ def load_gene_model_records(
 
             parent_id_upper = parent_id.upper()
             mrna_gene: gm.Gene | None = None
-            parent_candidate = model.get_parent(parent_id_upper, chrName)
+            parent_candidate = _resolve_parent(model, parent_id_upper, chrName)
             if isinstance(parent_candidate, gm.Gene):
                 mrna_gene = parent_candidate
             if not mrna_gene:
                 alias = parent_id_upper
                 try:
                     alias = geneAlias[parent_id_upper]
-                    alias_candidate = model.get_parent(alias, chrName)
+                    alias_candidate = _resolve_parent(model, alias, chrName)
                     if isinstance(alias_candidate, gm.Gene):
                         mrna_gene = alias_candidate
                 except KeyError:
@@ -288,7 +341,7 @@ def load_gene_model_records(
                 gm.ID_FIELD: transcript_id,
             }
             mrna = gm.mRNA(transcript_id, startPos, endPos, chrName, strand, attr=mrnaAttr)
-            mrna_gene.addmRNA(mrna)
+            mrna_gene.add_mrna(mrna)
             model.mRNAforms[chrName] = model.mRNAforms.setdefault(chrName, {})
             model.mRNAforms[chrName][transcript_id] = mrna
             mrnaCount += 1
@@ -305,7 +358,12 @@ def load_gene_model_records(
                     f"(known: {','.join(model.mRNAforms.keys())})"
                 )
 
-            mrna_record = model.get_parent(annots[gm.PARENT_FIELD], chrName, searchGenes=False)
+            mrna_record = _resolve_parent(
+                model,
+                annots[gm.PARENT_FIELD],
+                chrName,
+                search_genes=False,
+            )
             if not mrna_record:
                 if verbose:
                     sys.stderr.write(
@@ -333,7 +391,7 @@ def load_gene_model_records(
                 strand = mrna_record.strand
 
             cds = gm.cdsFactory(recType, startPos, endPos, chrName, strand, annots)
-            if gene_obj.addCDS(mrna_record, cds):
+            if gene_obj.add_cds(mrna_record, cds):
                 cdsCount += 1
 
         elif recType == RecordType.CHROMOSOME:
@@ -346,7 +404,7 @@ def load_gene_model_records(
                 continue
 
             parent_id = annots[gm.PARENT_FIELD]
-            parent_record = model.get_parent(parent_id, chrName)
+            parent_record = _resolve_parent(model, parent_id, chrName)
             if parent_record:
                 if strand in gm.VALID_STRANDS and strand != parent_record.strand:
                     conditionalException(
@@ -355,7 +413,7 @@ def load_gene_model_records(
                     )
                 else:
                     strand = parent_record.strand
-                parent_record.addFeature(
+                parent_record.add_feature(
                     gm.BaseFeature(recType, startPos, endPos, chrName, strand, annots)
                 )
             else:
@@ -375,7 +433,7 @@ def load_gene_model_records(
 
             feature_gene = model.model[chrName][parent_gene_id]
             try:
-                feature_gene.addFeature(
+                feature_gene.add_feature(
                     gm.BaseFeature(recType, startPos, endPos, chrName, strand, annots)
                 )
             except ValueError as err:

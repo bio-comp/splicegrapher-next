@@ -2,23 +2,35 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable, Collection
 from typing import TYPE_CHECKING, TextIO
 
-from SpliceGrapher.formats.GeneModel import defaultGeneFilter, geneSortKey
-from SpliceGrapher.shared.process_utils import getAttribute
 from SpliceGrapher.shared.progress import ProgressIndicator
 
 if TYPE_CHECKING:
-    from SpliceGrapher.formats.GeneModel import GeneFilter, GeneModel
+    from SpliceGrapher.formats.GeneModel import Gene, GeneModel
+
+GeneFilter = Callable[["Gene"], bool]
 
 
-def write_gff(model: "GeneModel", gffPath: str | TextIO, **args: object) -> None:
+def _default_gene_filter(gene: "Gene") -> bool:
+    return True
+
+
+def _gene_sort_key(gene: "Gene") -> tuple[int, int, str]:
+    return (gene.minpos, gene.maxpos, gene.id)
+
+
+def write_gff(
+    model: "GeneModel",
+    gff_path: str | TextIO,
+    *,
+    gene_filter: GeneFilter = _default_gene_filter,
+    gene_set: Collection[str] | None = None,
+    verbose: bool = False,
+) -> None:
     """Write full gene model to GFF output."""
-    geneFilter = getAttribute("geneFilter", defaultGeneFilter, **args)
-    geneSubset = getAttribute("geneSet", None, **args)
-    verbose = getAttribute("verbose", False, **args)
-
-    outStream = open(gffPath, "w") if isinstance(gffPath, str) else gffPath
+    outStream = open(gff_path, "w") if isinstance(gff_path, str) else gff_path
     chromList = sorted(model.allChr.keys())
     indicator = ProgressIndicator(10000, verbose=verbose)
     for c in chromList:
@@ -26,10 +38,10 @@ def write_gff(model: "GeneModel", gffPath: str | TextIO, **args: object) -> None
         if chrom is None:
             continue
         outStream.write(f"{chrom.gffString()}\n")
-        genes = model.get_gene_records(c, geneFilter)
-        if geneSubset:
-            genes = [g for g in genes if g.id in geneSubset or g.name in geneSubset]
-        genes.sort(key=geneSortKey)
+        genes = model.get_gene_records(c, gene_filter)
+        if gene_set:
+            genes = [g for g in genes if g.id in gene_set or g.name in gene_set]
+        genes.sort(key=_gene_sort_key)
         for g in genes:
             indicator.update()
             strings = g.gffStrings()
@@ -40,18 +52,18 @@ def write_gff(model: "GeneModel", gffPath: str | TextIO, **args: object) -> None
 
 def write_gtf(
     model: "GeneModel",
-    gtfPath: str | TextIO,
-    geneFilter: "GeneFilter" = defaultGeneFilter,
-    **args: object,
+    gtf_path: str | TextIO,
+    *,
+    gene_filter: GeneFilter = _default_gene_filter,
+    verbose: bool = False,
 ) -> None:
     """Write full gene model to GTF output."""
-    verbose = getAttribute("verbose", False, **args)
-    outStream = open(gtfPath, "w") if isinstance(gtfPath, str) else gtfPath
+    outStream = open(gtf_path, "w") if isinstance(gtf_path, str) else gtf_path
     chromList = sorted(model.allChr.keys())
     indicator = ProgressIndicator(10000, verbose=verbose)
     for c in chromList:
-        genes = model.get_gene_records(c, geneFilter)
-        genes.sort(key=geneSortKey)
+        genes = model.get_gene_records(c, gene_filter)
+        genes.sort(key=_gene_sort_key)
         for g in genes:
             indicator.update()
             strings = g.gtfStrings()
