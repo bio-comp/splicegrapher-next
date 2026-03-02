@@ -7,15 +7,10 @@ from pathlib import Path
 
 import gffutils
 
+from SpliceGrapher.core.enums import AttrKey, RecordType
 from SpliceGrapher.formats.GeneModel import (
     CDS,
-    EXON_TYPE,
     FP_UTR,
-    GENE_TYPE,
-    ID_FIELD,
-    MRNA_TYPE,
-    NAME_FIELD,
-    PARENT_FIELD,
     TP_UTR,
     Exon,
     Gene,
@@ -25,9 +20,9 @@ from SpliceGrapher.formats.GeneModel import (
     mRNA,
 )
 
-GENE_FEATURE_TYPES = {GENE_TYPE, "predicted_gene", "pseudogene"}
-TRANSCRIPT_FEATURE_TYPES = {MRNA_TYPE, "transcript", "pseudogenic_transcript"}
-CDS_FEATURE_TYPES = {"cds", "five_prime_utr", "three_prime_utr"}
+GENE_FEATURE_TYPES = {RecordType.GENE, RecordType.PREDICTED_GENE, RecordType.PSEUDOGENE}
+TRANSCRIPT_FEATURE_TYPES = {RecordType.MRNA, "transcript", RecordType.PSEUDOGENIC_TRANSCRIPT}
+CDS_FEATURE_TYPES = {RecordType.CDS, RecordType.FIVE_PRIME_UTR, RecordType.THREE_PRIME_UTR}
 
 
 def _first_attr(feature: gffutils.Feature, keys: list[str]) -> str | None:
@@ -212,7 +207,7 @@ def _build_gene_model_from_db(db: gffutils.FeatureDB) -> GeneModel:
                 elif maybe_gene:
                     transcript_gene.setdefault(transcript_id, maybe_gene)
 
-        if ftype == EXON_TYPE:
+        if ftype == RecordType.EXON:
             transcript_id = _first_attr(feature, ["transcript_id", "Parent", "ID"])
             if transcript_id is None:
                 continue
@@ -271,7 +266,7 @@ def _build_gene_model_from_db(db: gffutils.FeatureDB) -> GeneModel:
 
         gene = _get_or_create_gene(model, gene_records, gene_id, chrom, strand, minpos, maxpos)
 
-        iso_attr = {PARENT_FIELD: gene.id, NAME_FIELD: transcript_id, ID_FIELD: transcript_id}
+        iso_attr = {AttrKey.PARENT: gene.id, AttrKey.NAME: transcript_id, AttrKey.ID: transcript_id}
         isoform = Isoform(transcript_id, minpos, maxpos, chrom, strand, attr=iso_attr)
         for exon_feature in exons:
             exon = Exon(
@@ -284,7 +279,11 @@ def _build_gene_model_from_db(db: gffutils.FeatureDB) -> GeneModel:
             gene.addExon(isoform, exon)
 
         if cds_records:
-            mrna_attr = {PARENT_FIELD: gene.id, NAME_FIELD: transcript_id, ID_FIELD: transcript_id}
+            mrna_attr = {
+                AttrKey.PARENT: gene.id,
+                AttrKey.NAME: transcript_id,
+                AttrKey.ID: transcript_id,
+            }
             mrna_record = mRNA(transcript_id, minpos, maxpos, chrom, strand, attr=mrna_attr)
             for cds_feature in cds_records:
                 ftype = cds_feature.featuretype.lower()
