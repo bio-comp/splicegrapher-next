@@ -13,6 +13,11 @@ Historically, iDiffIR and TAPIS relied on divergent SpliceGrapher copies.
 This repository reduces duplication, centralizes migration work, and provides
 a generally usable Python 3 continuation while preserving behavior and imports.
 
+## Modern Assay Manifesto
+
+Current architecture/positioning contract for modern assay support is in
+`MODERN_ASSAY_MANIFESTO.md`.
+
 ## Phase 1 Scope
 
 Goals:
