@@ -9,14 +9,14 @@ import pysam
 import structlog
 
 from SpliceGrapher.core.enums import SamHeaderLine, SamHeaderTag
-from SpliceGrapher.shared.file_utils import ez_open
-from SpliceGrapher.shared.process_utils import getAttribute
-from SpliceGrapher.shared.progress import ProgressIndicator
-from SpliceGrapher.shared.ShortRead import (
+from SpliceGrapher.formats.shortread_compat import (
     SpliceJunction,
     isDepthsFile,
     readDepths,
 )
+from SpliceGrapher.shared.file_utils import ez_open
+from SpliceGrapher.shared.process_utils import getAttribute
+from SpliceGrapher.shared.progress import ProgressIndicator
 
 LOGGER = structlog.get_logger(__name__)
 
