@@ -6,6 +6,7 @@ import os
 from sys import maxsize as MAXINT
 
 from SpliceGrapher.core.enums import JunctionCode, ShortReadCode
+from SpliceGrapher.formats.depth_io import is_depths_file, read_depths
 from SpliceGrapher.shared.file_utils import ez_open
 from SpliceGrapher.shared.process_utils import getAttribute, idFactory
 from SpliceGrapher.shared.progress import ProgressIndicator
@@ -98,99 +99,25 @@ def depthsToClusters(chromosome, depths, **args):
 
 def isDepthsFile(f):
     """Returns True if a file is a SpliceGrapher depths file; False otherwise."""
-    if isinstance(f, (str, os.PathLike)):
-        path = os.fspath(f)
-        if not os.path.isfile(path):
-            return False
-        with ez_open(path) as inStream:
-            firstLine = inStream.readline()
-    elif hasattr(f, "read"):
-        firstLine = f.readline()
-        if hasattr(f, "seek"):
-            f.seek(0)
-    else:
-        return False
-
-    if isinstance(firstLine, bytes):
-        firstLine = firstLine.decode("utf-8")
-    parts = firstLine.strip().split("\t")
-    return parts and parts[0] in DEPTH_CODES
+    return is_depths_file(f, depth_codes=tuple(DEPTH_CODES))
 
 
 def readDepths(f, **args):
     """Loads read depth data from a SpliceGrapher depth file.
     Returns a dictionary of read depth arrays, one per chromosome,
     along with a dictionary of splice junctions."""
-    limit = getAttribute("maxpos", MAXINT, **args)
-    minanchor = getAttribute("minanchor", 0, **args)
-    minjct = getAttribute("minjct", 1, **args)
-    useDepths = getAttribute("depths", True, **args)
-    useJunctions = getAttribute("junctions", True, **args)
-    verbose = getAttribute("verbose", False, **args)
-
-    d = {}
-    jcts = {}
-
-    # NB: limit is global position limit;
-    #     maxpos is chromosome-specific
-    maxpos = limit
-
-    # Loading into buffer all at once is 18-30%
-    # faster than doing millions of reads, and not
-    # too memory-intensive even for large genomes
-    lines = ez_open(f).readlines()
-    indicator = ProgressIndicator(1000000, verbose=verbose)
-    for line in lines:
-        indicator.update()
-        s = line.strip()
-        parts = s.split("\t")
-        if len(parts) < 3:
-            raise ValueError("Bad depths record at line %d:\n%s" % (indicator.ctr, line))
-        recType = parts[0]
-        c = parts[1]
-        if recType == CHROM_CODE:
-            # C	chr1	123456789
-            if not useDepths:
-                continue
-            # maxpos may change for each chromosome
-            maxpos = min(limit, int(parts[2]))
-            d[c] = [0] * maxpos
-        elif recType == JCT_CODE:
-            if not useJunctions:
-                continue
-            jct = stringToJunction(s)
-            if jct.count < minjct:
-                continue
-            if jct.minAnchor() < minanchor:
-                continue
-            if jct.minpos > maxpos:
-                continue
-            jcts.setdefault(c, [])
-            jcts[c].append(jct)
-        else:
-            if not useDepths:
-                continue
-            if c not in d:
-                raise ValueError("No chromosome information specified for %s depths" % c)
-
-            # D	chr1	1234:0,66:1,...
-            rlString = parts[2]
-
-            # Initial implementation uses split();
-            # later see if it's faster/less memory
-            # to do direct string indexing :
-            rparts = rlString.split(",")
-            pos = 0
-            for rpair in rparts:
-                [rlen, height] = [int(x) for x in rpair.split(":")]
-                ubound = min(limit, pos + rlen)
-                d[c][pos:ubound] = [height] * rlen
-                pos += rlen
-                if pos >= limit:
-                    break
-
-    indicator.finish()
-    return (d, jcts)
+    return read_depths(
+        f,
+        parse_junction=stringToJunction,
+        maxpos=getAttribute("maxpos", MAXINT, **args),
+        minanchor=getAttribute("minanchor", 0, **args),
+        minjct=getAttribute("minjct", 1, **args),
+        depths=getAttribute("depths", True, **args),
+        junctions=getAttribute("junctions", True, **args),
+        verbose=getAttribute("verbose", False, **args),
+        chrom_code=CHROM_CODE,
+        jct_code=JCT_CODE,
+    )
 
 
 def stringToJunction(s):

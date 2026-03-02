@@ -11,8 +11,8 @@ import structlog
 from SpliceGrapher.core.enums import SamHeaderLine, SamHeaderTag
 from SpliceGrapher.formats.shortread_compat import (
     SpliceJunction,
-    isDepthsFile,
-    readDepths,
+    is_depths_file,
+    read_depths,
 )
 from SpliceGrapher.shared.file_utils import ez_open
 from SpliceGrapher.shared.process_utils import getAttribute
@@ -840,8 +840,8 @@ def getSamDepths(samRecords, **args):
         depths, _ = _collect_pysam_data(samRecords, junctions=False, **args)
         return depths
 
-    if isDepthsFile(samRecords):
-        depths, jcts = readDepths(samRecords, junctions=False, **args)
+    if is_depths_file(samRecords):
+        depths, jcts = read_depths(samRecords, junctions=False, **args)
         return depths
 
     depths = {}
@@ -990,8 +990,8 @@ def getSamJunctions(samRecords, **args):
         _, junctions = _collect_pysam_data(samRecords, **args)
         return junctions
 
-    if isDepthsFile(samRecords):
-        depths, jcts = readDepths(samRecords, depths=False, **args)
+    if is_depths_file(samRecords):
+        depths, jcts = read_depths(samRecords, depths=False, **args)
         return jcts
 
     # Restrict records to the given chromosomes
@@ -1081,8 +1081,8 @@ def getSamReadData(samRecords, **args):
     if _is_alignment_path(samRecords) and is_native_alignment:
         return _collect_pysam_data(samRecords, **args)
 
-    if isDepthsFile(samRecords):
-        depths, jcts = readDepths(samRecords, **args)
+    if is_depths_file(samRecords):
+        depths, jcts = read_depths(samRecords, **args)
         return depths, jcts
 
     align = {}
