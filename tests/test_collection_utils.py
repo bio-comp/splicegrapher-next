@@ -22,9 +22,9 @@ def test_as_set_handles_supported_inputs() -> None:
 
 def test_as_list_and_as_set_reject_invalid_inputs() -> None:
     with pytest.raises(TypeError):
-        as_list(123)  # type: ignore[arg-type]
+        as_list(123)  # type: ignore[call-overload]
     with pytest.raises(TypeError):
-        as_set(123)  # type: ignore[arg-type]
+        as_set(123)  # type: ignore[call-overload]
 
 
 def test_binary_search_returns_raw_insertion_index() -> None:
