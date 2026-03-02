@@ -8,6 +8,8 @@ from __future__ import annotations
 # TRYING A NEW WAY TO IDENTIFY GENES:
 import os
 import sys
+from collections.abc import Callable, Iterable
+from typing import TextIO, TypeVar
 from urllib.parse import unquote
 
 from SpliceGrapher.core.enum_coercion import coerce_enum
@@ -94,28 +96,39 @@ FORM_DELIMITERS = [".", "-", "_", ","]
 GENE_SEARCH_RANGE = 16
 GENE_SEARCH_MARGIN = 8
 
+GeneFilter = Callable[["Gene"], bool]
+GffRecordSource = str | list[str] | set[str] | tuple[str, ...]
+AttrT = TypeVar("AttrT")
 
-def gene_type_filter(g):
+
+def gene_type_filter(g: "Gene") -> bool:
     """Convenience filter for getting only 'gene' records."""
     return g.featureType == RecordType.GENE
 
 
-def defaultGeneFilter(g):
+def defaultGeneFilter(g: "Gene") -> bool:
     """Default function for filtering genes from a list."""
     return True
 
 
-def dictToGFF(d):
+def dictToGFF(d: dict[str, object]) -> str:
     """Returns a string representation of a dictionary based on the GFF3 annotation format."""
     return ";".join(["{}={}".format(k, v) for k, v in sorted(d.items()) if k != "parent"])
 
 
-def dictToGTF(d):
+def dictToGTF(d: dict[str, object]) -> str:
     """Returns a string representation of a dictionary based on the GTF annotation format."""
     return "; ".join(['{} "{}"'.format(k, v) for k, v in sorted(d.items()) if k != "parent"])
 
 
-def cdsFactory(recType, startPos, endPos, chrName, strand, attr=None):
+def cdsFactory(
+    recType: RecordType,
+    startPos: int,
+    endPos: int,
+    chrName: str,
+    strand: str,
+    attr: dict[str, str] | None = None,
+) -> "CDS":
     """Simple factory method for creating CDS-type records."""
     attr = {} if attr is None else attr
     if recType == RecordType.CDS:
@@ -131,24 +144,24 @@ def cdsFactory(recType, startPos, endPos, chrName, strand, attr=None):
 class Chromosome(object):
     """Class that encapsulates a chromosome GFF record."""
 
-    def __init__(self, start, end, name):
+    def __init__(self, start: int, end: int, name: str) -> None:
         self.minpos = start
         self.maxpos = end
         self.name = name
 
-    def __len__(self):
+    def __len__(self) -> int:
         return self.maxpos - self.minpos + 1
 
-    def __str__(self):
+    def __str__(self) -> str:
         return f"{self.name}: {self.minpos}-{self.maxpos}"
 
-    def contains(self, pos):
+    def contains(self, pos: int) -> bool:
         return self.minpos <= pos <= self.maxpos
 
-    def end(self):
+    def end(self) -> int:
         return self.maxpos
 
-    def gffString(self):
+    def gffString(self) -> str:
         # Example: Chr1    TAIR9   chromosome  1   30427671    .   .   .   ID=Chr1;Name=Chr1
         nameStr = self.name.capitalize()
         return (
@@ -156,10 +169,10 @@ class Chromosome(object):
             f"\tID={nameStr};Name={nameStr}"
         )
 
-    def start(self):
+    def start(self) -> int:
         return self.minpos
 
-    def update(self, feature):
+    def update(self, feature: "BaseFeature") -> None:
         """
         Many species do not have 'chromosome' entries in their annotations,
         so we must infer chromosome boundaries from observed features.
@@ -172,7 +185,7 @@ class Chromosome(object):
         self.maxpos = max(self.maxpos, feature.maxpos)
 
 
-def featureCmp(a, b):
+def featureCmp(a: "BaseFeature", b: "BaseFeature") -> int:
     """
     General comparison function for sorting any features that have 'minpos'
     and 'maxpos' attributes.
@@ -183,17 +196,17 @@ def featureCmp(a, b):
         return a.minpos - b.minpos
 
 
-def featureSortKey(feature):
+def featureSortKey(feature: "BaseFeature") -> tuple[int, int]:
     """Sort features by genomic interval."""
     return (feature.minpos, feature.maxpos)
 
 
-def geneSortKey(gene):
+def geneSortKey(gene: "Gene") -> tuple[int, int, str]:
     """Sort genes by interval, then id for deterministic ties."""
     return (gene.minpos, gene.maxpos, gene.id)
 
 
-def featureOverlaps(a, b):
+def featureOverlaps(a: "BaseFeature | None", b: "BaseFeature | None") -> bool:
     """
     General function for determining whether feature 'a' and feature 'b' overlap.
     """
@@ -202,7 +215,7 @@ def featureOverlaps(a, b):
     return intervals_overlap(a, b)
 
 
-def featureContains(a, b):
+def featureContains(a: "BaseFeature | None", b: "BaseFeature | None") -> bool:
     """
     General function for determining whether feature 'a' contains
     feature 'b'.  Note that both features must have 'minpos'
@@ -213,7 +226,13 @@ def featureContains(a, b):
     return interval_contains(a, b)
 
 
-def feature_search(features, query, lo=0, hi=None, overlap_window=8):
+def feature_search(
+    features: list["BaseFeature"],
+    query: "BaseFeature",
+    lo: int = 0,
+    hi: int | None = None,
+    overlap_window: int = 8,
+) -> "BaseFeature":
     """
     Bisect-based search through a sorted feature list.
 
@@ -240,7 +259,9 @@ def feature_search(features, query, lo=0, hi=None, overlap_window=8):
     )
 
 
-def featureSearch(features, query, lo=0, hi=None):
+def featureSearch(
+    features: list["BaseFeature"], query: "BaseFeature", lo: int = 0, hi: int | None = None
+) -> "BaseFeature":
     """Compatibility wrapper for ``feature_search``."""
     return feature_search(features, query, lo=lo, hi=hi)
 
@@ -1102,16 +1123,16 @@ class PseudoGene(Gene):
 
 
 class GeneModel(object):
-    def __init__(self, gffPath, **args):
+    def __init__(self, gffPath: GffRecordSource | None, **args: object) -> None:
         """Instantiates a GeneModel object.  If a path is provided, this will
         load gene models from the given file."""
         # 2-dimensional model indexed by chromosome then gene
-        self.allGenes = {}
-        self.allChr = {}
-        self.foundTypes = {}
-        self.model = {}
-        self.mRNAforms = {}
-        self.sorted = {}
+        self.allGenes: dict[str, Gene] = {}
+        self.allChr: dict[str, Chromosome] = {}
+        self.foundTypes: dict[RecordType, bool] = {}
+        self.model: dict[str, dict[str, Gene]] = {}
+        self.mRNAforms: dict[str, dict[str, mRNA]] = {}
+        self.sorted: dict[str, dict[str, list[Gene]]] = {}
 
         if gffPath:  # Load gene models from a file
             if isinstance(gffPath, str) and not os.path.exists(gffPath):
@@ -1123,11 +1144,11 @@ class GeneModel(object):
                 raise ValueError("No gene models found in {}".format(gffPath))
             self.makeSortedModel()
 
-    def __contains__(self, gene):
+    def __contains__(self, gene: object) -> bool:
         """Returns true if a gene is in the model; false otherwise."""
         return str(gene) in self.allGenes
 
-    def addChromosome(self, start, end, name):
+    def addChromosome(self, start: int, end: int, name: str) -> None:
         """Adds a chromosome to a gene model or updates the end points
         if the record already exists."""
         key = name.lower()
@@ -1139,7 +1160,7 @@ class GeneModel(object):
             self.allChr[key] = Chromosome(start, end, name)
             self.model.setdefault(key, {})
 
-    def addGene(self, gene):
+    def addGene(self, gene: Gene) -> None:
         """Adds a gene to a gene model.  Raises a ValueError if the
         gene has already been added."""
         if gene.id in self.model[gene.chromosome] or str(gene) in self.allGenes:
@@ -1148,7 +1169,14 @@ class GeneModel(object):
         self.model[gene.chromosome][gene.id] = gene
         self.allGenes[str(gene)] = gene
 
-    def binarySearchGenes(self, geneList, loc, lo, hi, pfx=""):
+    def binarySearchGenes(
+        self,
+        geneList: list[Gene],
+        loc: int,
+        lo: int,
+        hi: int,
+        pfx: str = "",
+    ) -> tuple[Gene | None, Gene | None]:
         """Quasi-binary search through a gene list.  Performs binary search to a point,
         then performs linear search within a refined gene range.  Real binary search may
         not be possible since gene models may overlap or contain one within another."""
@@ -1168,8 +1196,9 @@ class GeneModel(object):
                 return self.binarySearchGenes(geneList, loc, midpt + 1, hi, pfx + " ")
             elif loc < midGene.minpos:
                 return self.binarySearchGenes(geneList, loc, lo, midpt - 1, pfx + " ")
+        return (None, None)
 
-    def cleanName(self, s):
+    def cleanName(self, s: str) -> str:
         """
         Some feature names include URL characters that we may wish to fix.
         """
@@ -1177,7 +1206,9 @@ class GeneModel(object):
         revised = revised.replace(",", "")
         return revised.replace(" ", "-")
 
-    def getAllAcceptors(self, geneFilter=defaultGeneFilter):
+    def getAllAcceptors(
+        self, geneFilter: GeneFilter = defaultGeneFilter
+    ) -> dict[str, dict[str, set[int]]]:
         """
         Returns a dictionary of all known acceptor sites in the gene model,
         indexed by chromosome and strand.
@@ -1187,7 +1218,9 @@ class GeneModel(object):
             result[chrom] = self.getKnownAcceptors(chrom, geneFilter)
         return result
 
-    def getAllDonors(self, geneFilter=defaultGeneFilter):
+    def getAllDonors(
+        self, geneFilter: GeneFilter = defaultGeneFilter
+    ) -> dict[str, dict[str, set[int]]]:
         """
         Returns a dictionary of all known donor sites in the gene model,
         indexed by chromosome and strand.
@@ -1197,11 +1230,11 @@ class GeneModel(object):
             result[chrom] = self.getKnownDonors(chrom, geneFilter)
         return result
 
-    def getAllGeneIds(self, geneFilter=defaultGeneFilter):
+    def getAllGeneIds(self, geneFilter: GeneFilter = defaultGeneFilter) -> list[str]:
         """Returns a list of ids for all genes stored."""
         return [g.id for g in self.allGenes.values() if geneFilter(g)]
 
-    def getAllGenes(self, geneFilter=defaultGeneFilter, **args):
+    def getAllGenes(self, geneFilter: GeneFilter = defaultGeneFilter, **args: object) -> list[Gene]:
         """Returns a list of all genes stored."""
         verbose = getAttribute("verbose", False, **args)
         indicator = ProgressIndicator(10000, verbose=verbose)
@@ -1213,7 +1246,9 @@ class GeneModel(object):
         indicator.finish()
         return result
 
-    def getAnnotation(self, key, annotDict, default=None):
+    def getAnnotation(
+        self, key: str, annotDict: dict[str, str], default: AttrT | None = None
+    ) -> str | AttrT | None:
         """
         Convenience method for retrieving a value from an annotation dictionary
         """
@@ -1222,7 +1257,7 @@ class GeneModel(object):
         except KeyError:
             return default
 
-    def getAnnotationDict(self, s):
+    def getAnnotationDict(self, s: str) -> dict[str, str]:
         """
         Parses a ';'-separated annotation string containing key-value pairs
         and returns them as a dictionary.
@@ -1246,11 +1281,11 @@ class GeneModel(object):
         except KeyError:
             return None
 
-    def getChromosomes(self):
+    def getChromosomes(self) -> Iterable[str]:
         """Returns a list of all chromosomes represented in the model."""
         return self.model.keys()
 
-    def getFeatureList(self, featureType):
+    def getFeatureList(self, featureType: str | RecordType) -> list[BaseFeature]:
         """
         Returns a list of all features of the given type found in all genes.
         """
@@ -1299,14 +1334,16 @@ class GeneModel(object):
 
         if not (logene or higene):
             return None
-        elif logene.contains(startPos, strand) or logene.contains(endPos, strand):
+        elif logene and (logene.contains(startPos, strand) or logene.contains(endPos, strand)):
             return logene
-        elif higene.contains(startPos, strand) or higene.contains(endPos, strand):
+        elif higene and (higene.contains(startPos, strand) or higene.contains(endPos, strand)):
             return higene
 
         return None
 
-    def getGeneRecords(self, chrom, geneFilter=defaultGeneFilter, **args):
+    def getGeneRecords(
+        self, chrom: str, geneFilter: GeneFilter = defaultGeneFilter, **args: object
+    ) -> list[Gene]:
         """
         Returns a list of all gene instances represented within a given chromosome.
         The gene list may be filtered by changing the geneFilter function.
@@ -1325,16 +1362,18 @@ class GeneModel(object):
         except KeyError:
             return []
 
-    def getGenes(self, chrom):
+    def getGenes(self, chrom: str) -> list[str]:
         """
         Returns a list of all genes represented within a given chromosome.
         """
         try:
-            return self.model[chrom.lower()].keys()
+            return list(self.model[chrom.lower()].keys())
         except KeyError:
             return []
 
-    def getGenesInRange(self, chrom, minpos, maxpos, strand=None):
+    def getGenesInRange(
+        self, chrom: str, minpos: int, maxpos: int, strand: str | None = None
+    ) -> list[Gene]:
         """
         Returns a list of all gene instances represented within a given chromosome
         that overlap the given range.  If no strand is specified, this will
@@ -1349,22 +1388,26 @@ class GeneModel(object):
             result.append(g)
         return result
 
-    def getKnownAcceptors(self, chrom, geneFilter=defaultGeneFilter):
+    def getKnownAcceptors(
+        self, chrom: str, geneFilter: GeneFilter = defaultGeneFilter
+    ) -> dict[str, set[int]]:
         """
         Returns a dictionary of all known acceptor sites for the chromosome,
         indexed by strand.
         """
-        result = {"-": set([]), "+": set([])}
+        result: dict[str, set[int]] = {"-": set(), "+": set()}
         for g in self.getGeneRecords(chrom, geneFilter):
             result[g.strand].update(g.acceptorList())
         return result
 
-    def getKnownDonors(self, chrom, geneFilter=defaultGeneFilter):
+    def getKnownDonors(
+        self, chrom: str, geneFilter: GeneFilter = defaultGeneFilter
+    ) -> dict[str, set[int]]:
         """
         Returns a dictionary of all known donor sites for the chromosome,
         indexed by strand.
         """
-        result = {"-": set([]), "+": set([])}
+        result: dict[str, set[int]] = {"-": set(), "+": set()}
         for g in self.getGeneRecords(chrom, geneFilter):
             result[g.strand].update(g.donorList())
         return result
@@ -1428,19 +1471,21 @@ class GeneModel(object):
                     return self.model[chrom][c]
         return None
 
-    def getRecordTypes(self):
+    def getRecordTypes(self) -> list[RecordType]:
         """Returns a list of all record types found in the input file."""
         return [k for k in self.foundTypes if self.foundTypes[k]]
 
-    def isoformDict(self, **args):
+    def isoformDict(
+        self, geneFilter: GeneFilter = defaultGeneFilter, **args: object
+    ) -> dict[str, set[str]]:
         """Returns a dictionary that maps gene names to their corresponding
         isoform identifiers.  Each gene is associated with a set of isoform ids."""
-        result = {}
-        for g in self.getAllGenes(**args):
-            result[g.id] = set(g.mrna.keys() + g.isoforms.keys())
+        result: dict[str, set[str]] = {}
+        for g in self.getAllGenes(geneFilter=geneFilter, **args):
+            result[g.id] = set(list(g.mrna.keys()) + list(g.isoforms.keys()))
         return result
 
-    def loadGeneModel(self, gffRecords, **args):
+    def loadGeneModel(self, gffRecords: GffRecordSource, **args: object) -> None:
         """
         Reads a tab-delimited gene annotation GFF file and stores information
         on chromosomes, the genes within each chromosome and exons within each gene.
@@ -1456,7 +1501,7 @@ class GeneModel(object):
         verbose = getAttribute("verbose", False, **args)
         requireNotes = getAttribute("requireNodes", False, **args)
         ignoreErrors = getAttribute("ignoreErrors", False, **args)
-        chromosomes = None
+        chromosomes: list[str] | None = None
 
         # Convenience method for handling exceptions that could be ignored:
         def conditionalException(s: str) -> None:
@@ -1466,7 +1511,7 @@ class GeneModel(object):
         if isinstance(gffRecords, str):
             if verbose:
                 sys.stderr.write("Loading and validating gene models in {}\n".format(gffRecords))
-            instream = ez_open(gffRecords)
+            instream: Iterable[str] = ez_open(gffRecords)
         elif isinstance(gffRecords, (list, set, tuple)):
             if verbose:
                 sys.stderr.write(
@@ -1482,10 +1527,10 @@ class GeneModel(object):
         if "chromosomes" in args:
             chrParam = args["chromosomes"]
             if isinstance(chrParam, (list, tuple, set)):
-                chromosomes = [s.lower() for s in chrParam]
-            elif chrParam:
-                chromosomes = [chrParam]
-            if verbose:
+                chromosomes = [str(s).lower() for s in chrParam]
+            elif isinstance(chrParam, str) and chrParam:
+                chromosomes = [chrParam.lower()]
+            if verbose and chromosomes is not None:
                 sys.stderr.write("GeneModel loading chromosomes {}\n".format(",".join(chromosomes)))
 
         self.model = {}
@@ -1495,7 +1540,7 @@ class GeneModel(object):
         self.allChr = {}
         lineCtr = 0
 
-        geneAlias = {}
+        geneAlias: dict[str, str] = {}
         geneCount = 0
         exonCount = 0
         isoCount = 0
@@ -1536,7 +1581,7 @@ class GeneModel(object):
             # Convert input record type into a known enum-backed domain and map
             # aliases (e.g. predicted_gene -> gene) before processing.
             try:
-                recType = coerce_enum(parts[2].lower(), RecordType, field="record_type").value
+                recType = coerce_enum(parts[2].lower(), RecordType, field="record_type")
             except ValueError as exc:
                 raise ValueError(f"line {lineCtr}: unknown record type '{parts[2]}'") from exc
             recType = RECTYPE_MAP.get(recType, recType)
@@ -1544,7 +1589,7 @@ class GeneModel(object):
             startPos = int(parts[3])
             endPos = int(parts[4])
             try:
-                strand = coerce_enum(parts[6], Strand, field="strand").value
+                strand = coerce_enum(parts[6], Strand, field="strand")
             except ValueError as exc:
                 raise ValueError(f"line {lineCtr}: unknown strand '{parts[6]}'") from exc
 
@@ -1577,24 +1622,26 @@ class GeneModel(object):
                     self.addChromosome(1, endPos, chrName)
 
                 if recType == RecordType.PSEUDOGENE:
-                    gene = PseudoGene(gid, note, startPos, endPos, chrName, strand, name, annots)
+                    gene_obj: Gene = PseudoGene(
+                        gid, note, startPos, endPos, chrName, strand, name, annots
+                    )
                 else:  # genes and predicted_genes
-                    gene = Gene(gid, note, startPos, endPos, chrName, strand, name, annots)
+                    gene_obj = Gene(gid, note, startPos, endPos, chrName, strand, name, annots)
 
                 try:
-                    other = self.allGenes[str(gene)]
+                    other = self.allGenes[str(gene_obj)]
                     conditionalException(
-                        f"line {lineCtr}: gene {gene.id} associated with multiple loci: "
+                        f"line {lineCtr}: gene {gene_obj.id} associated with multiple loci: "
                         f"{other.minpos}-{other.maxpos} and {startPos}-{endPos}"
                     )
                 except KeyError:
                     pass
 
-                self.allChr[chrName].update(gene)
-                self.addGene(gene)
+                self.allChr[chrName].update(gene_obj)
+                self.addGene(gene_obj)
                 # Map both relationships
-                geneAlias[gene.name.upper()] = gene.id.upper()
-                geneAlias[gene.id.upper()] = gene.name.upper()
+                geneAlias[gene_obj.name.upper()] = gene_obj.id.upper()
+                geneAlias[gene_obj.id.upper()] = gene_obj.name.upper()
                 geneCount += 1
 
             elif recType in [RecordType.EXON, RecordType.PSEUDOGENIC_EXON]:
@@ -1602,28 +1649,33 @@ class GeneModel(object):
                     continue
 
                 # Parent identifiers for exons
-                parent = None
+                parent_record: Gene | mRNA | None = None
                 tried = set()
                 for k in POSSIBLE_GENE_FIELDS:
                     if (k not in annots) or (annots[k] in tried):
                         continue
                     isoName = annots[k]
-                    parent = self.getParent(isoName, chrName)
-                    if parent:
+                    parent_record = self.getParent(isoName, chrName)
+                    if parent_record:
                         break
                     tried.add(isoName)
-                if not parent:
+                if not parent_record:
                     continue
 
-                if parent.featureType == RecordType.MRNA:
-                    gene = parent.parent
-                    if gene is None:
+                if parent_record.featureType == RecordType.MRNA:
+                    gene_obj = parent_record.parent
+                    if gene_obj is None:
                         conditionalException(
                             f"line {lineCtr}: mRNA parent is missing gene for exon record"
                         )
                         continue
                 else:
-                    gene = parent
+                    if not isinstance(parent_record, Gene):
+                        conditionalException(
+                            f"line {lineCtr}: exon parent {parent_record} is not a gene"
+                        )
+                        continue
+                    gene_obj = parent_record
 
                 # Next get the isoform if it already exists:
                 isoform = None
@@ -1636,8 +1688,8 @@ class GeneModel(object):
                     if annots[k] in tried:
                         continue
                     isoName = annots[k]
-                    if isoName in gene.isoforms:
-                        isoform = gene.isoforms[isoName]
+                    if isoName in gene_obj.isoforms:
+                        isoform = gene_obj.isoforms[isoName]
                         break
                     else:
                         tried.add(isoName)
@@ -1646,18 +1698,18 @@ class GeneModel(object):
                 if not (isoform or isoName):
                     continue
 
-                if strand in VALID_STRANDS and strand != gene.strand:
+                if strand in VALID_STRANDS and strand != gene_obj.strand:
                     conditionalException(
                         f"line {lineCtr}: exon strand ({strand}) != gene "
-                        f"strand ({gene.strand}) for {gene.id}"
+                        f"strand ({gene_obj.strand}) for {gene_obj.id}"
                     )
                 else:
-                    strand = gene.strand
+                    strand = gene_obj.strand
 
                 # Must add isoform to gene before adding exon
                 if not isoform:
                     isoAttr = {
-                        PARENT_FIELD: gene.id,
+                        PARENT_FIELD: gene_obj.id,
                         NAME_FIELD: isoName,
                         ID_FIELD: isoName,
                     }
@@ -1665,7 +1717,7 @@ class GeneModel(object):
                     isoCount += 1
 
                 exon = Exon(startPos, endPos, chrName, strand, annots)
-                exonCount = exonCount + 1 if gene.addExon(isoform, exon) else exonCount
+                exonCount = exonCount + 1 if gene_obj.addExon(isoform, exon) else exonCount
 
             elif recType in [RecordType.MRNA, RecordType.PSEUDOGENIC_TRANSCRIPT]:
                 if chrName not in self.model:
@@ -1678,40 +1730,53 @@ class GeneModel(object):
                     conditionalException(f"line {lineCtr}: mRNA with missing ID")
 
                 id = annots[ID_FIELD].upper()
-                parent = self.getAnnotation(PARENT_FIELD, annots)
-                if not parent:
+                parent_id = self.getAnnotation(PARENT_FIELD, annots)
+                if parent_id is None:
                     continue
 
-                parent = parent.upper()
-                gene = self.getParent(parent, chrName)
-                if not gene:
+                parent_id_upper = parent_id.upper()
+                mrna_gene: Gene | None = None
+                parent_candidate = self.getParent(parent_id_upper, chrName)
+                if isinstance(parent_candidate, Gene):
+                    mrna_gene = parent_candidate
+                if not mrna_gene:
+                    alias = parent_id_upper
                     try:
-                        alias = geneAlias[parent]
-                        gene = self.getParent(alias, chrName)
+                        alias = geneAlias[parent_id_upper]
+                        alias_candidate = self.getParent(alias, chrName)
+                        if isinstance(alias_candidate, Gene):
+                            mrna_gene = alias_candidate
                     except KeyError:
                         if verbose:
-                            if alias == parent:
+                            if alias == parent_id_upper:
                                 sys.stderr.write(
-                                    f"line {lineCtr}: no gene {parent} found for {recType}\n"
+                                    f"line {lineCtr}: no gene {parent_id_upper} found for "
+                                    f"{recType}\n"
                                 )
                             else:
                                 sys.stderr.write(
-                                    f"line {lineCtr}: no gene '{parent}' or "
+                                    f"line {lineCtr}: no gene '{parent_id_upper}' or "
                                     f"'{alias}' found for {recType}\n"
                                 )
                         continue
 
-                if strand in VALID_STRANDS and strand != gene.strand:
+                if mrna_gene is None:
+                    conditionalException(
+                        f"line {lineCtr}: no gene parent found for transcript {parent_id_upper}"
+                    )
+                    continue
+
+                if strand in VALID_STRANDS and strand != mrna_gene.strand:
                     conditionalException(
                         f"line {lineCtr}: mRNA strand ({strand}) does not "
-                        f"match gene strand ({gene.strand})"
+                        f"match gene strand ({mrna_gene.strand})"
                     )
                 else:
-                    strand = gene.strand
+                    strand = mrna_gene.strand
 
-                mrnaAttr = {PARENT_FIELD: gene.id, NAME_FIELD: id, ID_FIELD: id}
+                mrnaAttr = {PARENT_FIELD: mrna_gene.id, NAME_FIELD: id, ID_FIELD: id}
                 mrna = mRNA(id, startPos, endPos, chrName, strand, attr=mrnaAttr)
-                gene.addmRNA(mrna)
+                mrna_gene.addmRNA(mrna)
                 self.mRNAforms[chrName] = self.mRNAforms.setdefault(chrName, {})
                 self.mRNAforms[chrName][id] = mrna
                 mrnaCount += 1
@@ -1728,36 +1793,37 @@ class GeneModel(object):
                         f"(known: {','.join(self.mRNAforms.keys())})"
                     )
 
-                mrna = self.getParent(annots[PARENT_FIELD], chrName, searchGenes=False)
-                if not mrna:
+                mrna_record = self.getParent(annots[PARENT_FIELD], chrName, searchGenes=False)
+                if not mrna_record:
                     if verbose:
                         sys.stderr.write(
                             f"line {lineCtr}: no mRNA {annots[PARENT_FIELD]} found for {recType}\n"
                         )
                     continue
-                if mrna.featureType != RecordType.MRNA:
+                if mrna_record.featureType != RecordType.MRNA:
                     conditionalException(
                         f"line {lineCtr}: parent {annots[PARENT_FIELD]} is not an mRNA record"
                     )
                     continue
-                gene = mrna.parent
-                if gene is None:
+                gene_obj = mrna_record.parent
+                if gene_obj is None:
                     conditionalException(
-                        f"line {lineCtr}: mRNA {mrna.id} is missing a parent gene for CDS record"
+                        f"line {lineCtr}: mRNA {mrna_record.id} is missing a parent gene "
+                        "for CDS record"
                     )
                     continue
 
-                if strand in VALID_STRANDS and strand != mrna.strand:
+                if strand in VALID_STRANDS and strand != mrna_record.strand:
                     conditionalException(
                         f"line {lineCtr}: CDS strand ({strand}) does not "
-                        f"match mRNA strand ({mrna.strand})"
+                        f"match mRNA strand ({mrna_record.strand})"
                     )
                 else:
-                    strand = mrna.strand
+                    strand = mrna_record.strand
 
                 cds = cdsFactory(recType, startPos, endPos, chrName, strand, annots)
 
-                if gene.addCDS(mrna, cds):
+                if gene_obj.addCDS(mrna_record, cds):
                     cdsCount += 1
 
             elif recType == RecordType.CHROMOSOME:
@@ -1769,23 +1835,23 @@ class GeneModel(object):
                 if PARENT_FIELD not in annots:
                     continue
 
-                parentId = annots[PARENT_FIELD]
-                parent = self.getParent(parentId, chrName)
-                if parent:
-                    if strand in VALID_STRANDS and strand != parent.strand:
+                parent_id = annots[PARENT_FIELD]
+                parent_record = self.getParent(parent_id, chrName)
+                if parent_record:
+                    if strand in VALID_STRANDS and strand != parent_record.strand:
                         conditionalException(
                             f"line {lineCtr}: {recType} strand ({strand}) does not match "
-                            f"parent strand ({parent.strand})"
+                            f"parent strand ({parent_record.strand})"
                         )
                     else:
-                        strand = parent.strand
-                    parent.addFeature(
+                        strand = parent_record.strand
+                    parent_record.addFeature(
                         BaseFeature(recType, startPos, endPos, chrName, strand, annots)
                     )
                 else:
                     if verbose:
                         sys.stderr.write(
-                            f"line {lineCtr}: no parent {parentId} found for {recType}\n"
+                            f"line {lineCtr}: no parent {parent_id} found for {recType}\n"
                         )
                     continue
 
@@ -1795,13 +1861,15 @@ class GeneModel(object):
                 if PARENT_FIELD not in annots:
                     continue
 
-                parent = annots[PARENT_FIELD].split(".")[0]
-                if parent not in self.model[chrName]:
+                parent_gene_id = annots[PARENT_FIELD].split(".")[0]
+                if parent_gene_id not in self.model[chrName]:
                     continue
 
-                gene = self.model[chrName][parent]
+                feature_gene = self.model[chrName][parent_gene_id]
                 try:
-                    gene.addFeature(BaseFeature(recType, startPos, endPos, chrName, strand, annots))
+                    feature_gene.addFeature(
+                        BaseFeature(recType, startPos, endPos, chrName, strand, annots)
+                    )
                 except ValueError as e:
                     conditionalException(f"line {lineCtr}: {e}")
 
@@ -1823,7 +1891,7 @@ class GeneModel(object):
             else:
                 sys.stderr.write("** Warning: no genes loaded!\n")
 
-    def makeSortedModel(self):
+    def makeSortedModel(self) -> None:
         self.sorted = {}
         for chrom in self.model.keys():
             self.sorted[chrom] = {}
@@ -1838,7 +1906,7 @@ class GeneModel(object):
             for g in geneList:
                 self.sorted[chrom][g.strand].append(g)
 
-    def writeGFF(self, gffPath, **args):
+    def writeGFF(self, gffPath: str | TextIO, **args: object) -> None:
         """Writes a complete gene model out to a GFF file."""
         geneFilter = getAttribute("geneFilter", defaultGeneFilter, **args)
         geneSubset = getAttribute("geneSet", None, **args)
@@ -1863,7 +1931,9 @@ class GeneModel(object):
                     outStream.write("{}\n".format(strings))
         indicator.finish()
 
-    def writeGTF(self, gtfPath, geneFilter=defaultGeneFilter, **args):
+    def writeGTF(
+        self, gtfPath: str | TextIO, geneFilter: GeneFilter = defaultGeneFilter, **args: object
+    ) -> None:
         """Writes a complete gene model out to a GTF file."""
         verbose = getAttribute("verbose", False, **args)
         outStream = open(gtfPath, "w") if isinstance(gtfPath, str) else gtfPath
