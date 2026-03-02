@@ -1107,9 +1107,7 @@ class Gene(BaseFeature):
         # Avoid returning duplicates:
         stored = set([(e.minpos, e.maxpos) for e in tmpset])
         for mrna_rec in self._iter_mrna_records():
-            tmpset.update(
-                [e for e in mrna_rec.sortedExons() if (e.minpos, e.maxpos) not in stored]
-            )
+            tmpset.update([e for e in mrna_rec.sortedExons() if (e.minpos, e.maxpos) not in stored])
 
         result = list(tmpset)
         result.sort(key=featureSortKey, reverse=(self.strand == "-"))
