@@ -7,6 +7,9 @@ from collections.abc import Iterable, Iterator
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from SpliceGrapher.core.enum_coercion import coerce_enum
+from SpliceGrapher.core.enums import RecordType, Strand
+
 if TYPE_CHECKING:
     import polars as pl
 
@@ -22,6 +25,8 @@ _GFF_COLUMNS = (
     "phase",
     "attributes",
 )
+
+_RECORD_TYPE_BY_CASEFOLD = {record_type.value.casefold(): record_type for record_type in RecordType}
 
 
 class PolarsNotInstalledError(ImportError):
@@ -63,21 +68,31 @@ def _row_from_parts(parts: list[str]) -> dict[str, str | int | None]:
         raise ValueError("start/end must be integers") from exc
 
     attributes = parse_gff_attributes(parts[8])
+    record_type = _coerce_record_type(parts[2])
+    strand = coerce_enum(parts[6], Strand, field="strand")
 
     return {
         "chrom": parts[0],
         "source": parts[1],
-        "type": parts[2],
+        "type": record_type,
         "start": start,
         "end": end,
         "score": parts[5],
-        "strand": parts[6],
+        "strand": strand,
         "phase": parts[7],
         "attributes": parts[8],
         "feature_id": attributes.get("ID"),
         "parent_id": attributes.get("Parent"),
         "name": attributes.get("Name"),
     }
+
+
+def _coerce_record_type(value: str) -> RecordType:
+    normalized = value.strip()
+    try:
+        return _RECORD_TYPE_BY_CASEFOLD[normalized.casefold()]
+    except KeyError:
+        return coerce_enum(normalized, RecordType, field="record_type")
 
 
 def iter_gff_records(
