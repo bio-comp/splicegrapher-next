@@ -376,7 +376,7 @@ class BaseFeature(object):
         )
 
     def __hash__(self):
-        return self.__str__().__hash__()
+        return hash((self.minpos, self.maxpos, self.strand, self.chromosome))
 
     def __len__(self):
         return self.maxpos - self.minpos + 1
@@ -414,8 +414,6 @@ class Isoform(BaseFeature):
     def __init__(self, id, start, end, chromosome, strand, attr=None):
         BaseFeature.__init__(self, ISOFORM_TYPE, start, end, chromosome, strand, attr)
         self.id = id
-        if self.id == "ENSG00000149256":
-            raise AttributeError("ISOFORM USES GENE NAME {}".format(id))
         self.features = []
         self.exons = []
         self.exonMap = {}

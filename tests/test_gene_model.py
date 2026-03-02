@@ -151,3 +151,17 @@ def test_gene_default_attributes_are_not_shared() -> None:
     gene_one.attributes["tag"] = "one"
 
     assert "tag" not in gene_two.attributes
+
+
+def test_isoform_constructor_does_not_contain_hardcoded_identifier_traps() -> None:
+    isoform = gm.Isoform("ENSG00000149256", 10, 20, "chr1", "+")
+
+    assert isoform.id == "ENSG00000149256"
+
+
+def test_basefeature_hash_matches_equality_contract() -> None:
+    left = gm.BaseFeature("feature_a", 1, 10, "chr1", "+")
+    right = gm.BaseFeature("feature_b", 1, 10, "chr1", "+")
+
+    assert left == right
+    assert hash(left) == hash(right)
