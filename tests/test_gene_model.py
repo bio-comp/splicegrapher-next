@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import inspect
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -165,3 +166,168 @@ def test_basefeature_hash_matches_equality_contract() -> None:
 
     assert left == right
     assert hash(left) == hash(right)
+
+
+def test_load_gene_model_delegates_to_parser_boundary(monkeypatch: pytest.MonkeyPatch) -> None:
+    model = GeneModel(None)
+    records = ["chr1\tsrc\tgene\t1\t10\t.\t+\t.\tID=GENE1;Name=GENE1"]
+    calls: dict[str, object] = {}
+
+    def _fake_loader(
+        model_arg: GeneModel, gff_records_arg: gm.GffRecordSource, **kwargs: object
+    ) -> None:
+        calls["model"] = model_arg
+        calls["records"] = gff_records_arg
+        calls["kwargs"] = kwargs
+
+    monkeypatch.setattr(gm, "load_gene_model_records", _fake_loader)
+
+    model.load_gene_model(records, verbose=True)
+
+    assert calls["model"] is model
+    assert calls["records"] == records
+    assert calls["kwargs"] == {
+        "require_notes": False,
+        "chromosomes": None,
+        "verbose": True,
+        "ignore_errors": False,
+    }
+
+
+def test_write_gff_delegates_to_writer_boundary(monkeypatch: pytest.MonkeyPatch) -> None:
+    import io
+
+    model = GeneModel(None)
+    out_stream = io.StringIO()
+    calls: dict[str, object] = {}
+
+    def _fake_write_gff(
+        model_arg: GeneModel,
+        gff_path_arg: str | io.StringIO,
+        *,
+        gene_filter: gm.GeneFilter,
+        gene_set: set[str] | list[str] | tuple[str, ...] | None,
+        verbose: bool,
+    ) -> None:
+        calls["model"] = model_arg
+        calls["path"] = gff_path_arg
+        calls["gene_filter"] = gene_filter
+        calls["gene_set"] = gene_set
+        calls["verbose"] = verbose
+
+    monkeypatch.setattr(gm, "write_gene_model_gff", _fake_write_gff)
+
+    model.write_gff(out_stream, verbose=True)
+
+    assert calls["model"] is model
+    assert calls["path"] is out_stream
+    assert calls["gene_filter"] is gm.defaultGeneFilter
+    assert calls["gene_set"] is None
+    assert calls["verbose"] is True
+
+
+def test_write_gtf_delegates_to_writer_boundary(monkeypatch: pytest.MonkeyPatch) -> None:
+    import io
+
+    model = GeneModel(None)
+    out_stream = io.StringIO()
+    calls: dict[str, object] = {}
+
+    def _fake_write_gtf(
+        model_arg: GeneModel,
+        gtf_path_arg: str | io.StringIO,
+        *,
+        gene_filter: gm.GeneFilter,
+        verbose: bool,
+    ) -> None:
+        calls["model"] = model_arg
+        calls["path"] = gtf_path_arg
+        calls["gene_filter"] = gene_filter
+        calls["verbose"] = verbose
+
+    monkeypatch.setattr(gm, "write_gene_model_gtf", _fake_write_gtf)
+
+    model.write_gtf(out_stream, verbose=True)
+
+    assert calls["model"] is model
+    assert calls["path"] is out_stream
+    assert calls["gene_filter"] is gm.defaultGeneFilter
+    assert calls["verbose"] is True
+
+
+def test_gene_model_init_signature_uses_explicit_keywords() -> None:
+    signature = inspect.signature(GeneModel.__init__)
+    assert "args" not in signature.parameters
+    assert "require_notes" in signature.parameters
+    assert "chromosomes" in signature.parameters
+    assert "verbose" in signature.parameters
+    assert "ignore_errors" in signature.parameters
+
+
+def test_gene_string_representation_is_not_stale_after_coordinate_updates() -> None:
+    gene = Gene("GENE1", None, 10, 20, "chr1", "+")
+
+    original = str(gene)
+    gene.minpos = 1
+    gene.maxpos = 30
+    updated = str(gene)
+
+    assert original != updated
+    assert "1-30" in updated
+
+
+def test_query_method_signatures_use_explicit_verbose_keywords() -> None:
+    get_all_genes_sig = inspect.signature(GeneModel.get_all_genes)
+    get_gene_records_sig = inspect.signature(GeneModel.get_gene_records)
+    isoform_dict_sig = inspect.signature(GeneModel.isoform_dict)
+
+    assert "args" not in get_all_genes_sig.parameters
+    assert "verbose" in get_all_genes_sig.parameters
+    assert "args" not in get_gene_records_sig.parameters
+    assert "verbose" in get_gene_records_sig.parameters
+    assert "args" not in isoform_dict_sig.parameters
+    assert "verbose" in isoform_dict_sig.parameters
+
+
+def test_get_parent_uses_strict_lookup_without_delimiter_guessing() -> None:
+    model = GeneModel(None)
+    model.add_chromosome(1, 100, "chr1")
+    gene = Gene("GENE1", None, 10, 20, "chr1", "+", name="GENE1")
+    model.add_gene(gene)
+
+    assert model.get_parent("GENE1", "chr1") is gene
+    assert model.get_parent("GENE1.1", "chr1") is None
+
+
+def test_load_gene_model_resolves_delimited_parent_ids_in_parser_layer() -> None:
+    model = GeneModel(None)
+    records = [
+        "chr1\tsrc\tgene\t1\t100\t.\t+\t.\tID=GENE1;Name=GENE1",
+        "chr1\tsrc\texon\t10\t20\t.\t+\t.\tParent=GENE1.1;transcript_id=TX1",
+    ]
+
+    model.load_gene_model(records)
+
+    gene = model.get_gene("chr1", "GENE1")
+    assert gene is not None
+    assert len(gene.exons) == 1
+    assert "TX1" in gene.isoforms
+
+
+def test_legacy_get_all_genes_keyword_is_supported() -> None:
+    model = GeneModel(None)
+    model.add_chromosome(1, 100, "chr1")
+    model.add_gene(Gene("GENE1", None, 10, 20, "chr1", "+", name="GENE1"))
+
+    genes = model.getAllGenes(geneFilter=gm.defaultGeneFilter)
+
+    assert [g.id for g in genes] == ["GENE1"]
+
+
+def test_legacy_get_parent_keywords_are_supported() -> None:
+    model = GeneModel(None)
+    model.add_chromosome(1, 100, "chr1")
+    gene = Gene("GENE1", None, 10, 20, "chr1", "+", name="GENE1")
+    model.add_gene(gene)
+
+    assert model.getParent("GENE1", "chr1", searchGenes=True, searchmRNA=False) is gene
