@@ -4,9 +4,11 @@ import hashlib
 import tempfile
 from collections import defaultdict
 from pathlib import Path
+from typing import TypedDict
 
 import gffutils
 
+from SpliceGrapher.core.enum_coercion import coerce_enum
 from SpliceGrapher.core.enums import AttrKey, RecordType
 from SpliceGrapher.formats.GeneModel import (
     CDS,
@@ -21,8 +23,36 @@ from SpliceGrapher.formats.GeneModel import (
 )
 
 GENE_FEATURE_TYPES = {RecordType.GENE, RecordType.PREDICTED_GENE, RecordType.PSEUDOGENE}
-TRANSCRIPT_FEATURE_TYPES = {RecordType.MRNA, "transcript", RecordType.PSEUDOGENIC_TRANSCRIPT}
-CDS_FEATURE_TYPES = {RecordType.CDS, RecordType.FIVE_PRIME_UTR, RecordType.THREE_PRIME_UTR}
+TRANSCRIPT_FEATURE_TYPES = {RecordType.MRNA, RecordType.PSEUDOGENIC_TRANSCRIPT}
+CDS_FEATURE_TYPES = {
+    RecordType.CDS,
+    RecordType.FIVE_PRIME_UTR,
+    RecordType.THREE_PRIME_UTR,
+}
+
+
+class GeneRecord(TypedDict):
+    id: str
+    chrom: str
+    strand: str
+    name: str
+    note: str | None
+    minpos: int
+    maxpos: int
+    attrs: dict[str, str]
+
+
+def _normalize_feature_type(raw_feature_type: str) -> RecordType | None:
+    """Normalize raw feature type strings to canonical ``RecordType`` values."""
+    normalized = raw_feature_type.strip().casefold()
+    if not normalized:
+        return None
+    if normalized == "transcript":
+        return RecordType.MRNA
+    try:
+        return coerce_enum(normalized, RecordType, field="feature_type")
+    except ValueError:
+        return None
 
 
 def _first_attr(feature: gffutils.Feature, keys: list[str]) -> str | None:
@@ -74,33 +104,33 @@ def _transcript_gene_map(db: gffutils.FeatureDB) -> dict[str, str]:
     """Map transcript IDs to gene IDs from transcript-like annotation records."""
     mapping: dict[str, str] = {}
     for feature in db.all_features(order_by=("seqid", "start", "end")):
-        ftype = feature.featuretype.lower()
-        if ftype not in TRANSCRIPT_FEATURE_TYPES:
+        feature_type = _normalize_feature_type(feature.featuretype)
+        if feature_type not in TRANSCRIPT_FEATURE_TYPES:
             continue
 
         transcript_id = _first_attr(feature, ["transcript_id", "ID", "Name"]) or feature.id
         if not transcript_id:
             continue
 
-        gene_id = None
-        parents = feature.attributes.get("Parent")
-        if parents:
-            gene_id = parents[0]
-        if gene_id is None:
-            gene_id = _first_attr(feature, ["gene_id", "gene", "gene_name", "Name"])
-        if gene_id is None:
+        parents = feature.attributes.get("Parent", [])
+        gene_id: str | None = (
+            parents[0]
+            if parents
+            else _first_attr(feature, ["gene_id", "gene", "gene_name", "Name"])
+        )
+        if not gene_id:
             continue
 
         mapping[transcript_id] = gene_id
     return mapping
 
 
-def _extract_gene_records(db: gffutils.FeatureDB) -> dict[str, dict[str, object]]:
+def _extract_gene_records(db: gffutils.FeatureDB) -> dict[str, GeneRecord]:
     """Collect normalized gene metadata from gene-like annotation records."""
-    records: dict[str, dict[str, object]] = {}
+    records: dict[str, GeneRecord] = {}
     for feature in db.all_features(order_by=("seqid", "start", "end")):
-        ftype = feature.featuretype.lower()
-        if ftype not in GENE_FEATURE_TYPES:
+        feature_type = _normalize_feature_type(feature.featuretype)
+        if feature_type not in GENE_FEATURE_TYPES:
             continue
 
         raw_gene_id = (
@@ -135,7 +165,7 @@ def _extract_gene_records(db: gffutils.FeatureDB) -> dict[str, dict[str, object]
 
 def _get_or_create_gene(
     model: GeneModel,
-    gene_records: dict[str, dict[str, object]],
+    gene_records: dict[str, GeneRecord],
     gene_id: str,
     chrom: str,
     strand: str,
@@ -152,7 +182,7 @@ def _get_or_create_gene(
         existing.maxpos = max(existing.maxpos, default_end)
         return existing
 
-    rec = gene_records.get(gene_id)
+    rec: GeneRecord | None = gene_records.get(gene_id)
     if rec is None:
         rec = {
             "id": gene_id,
@@ -168,8 +198,8 @@ def _get_or_create_gene(
     gene = Gene(
         rec["id"],
         rec["note"],
-        int(rec["minpos"]),
-        int(rec["maxpos"]),
+        rec["minpos"],
+        rec["maxpos"],
         rec["chrom"],
         rec["strand"],
         rec["name"],
@@ -194,9 +224,9 @@ def _build_gene_model_from_db(db: gffutils.FeatureDB) -> GeneModel:
         chrom = feature.seqid.lower()
         chrom_max[chrom] = max(chrom_max.get(chrom, 0), feature.end)
         strand = feature.strand if feature.strand in {"+", "-", "."} else "."
-        ftype = feature.featuretype.lower()
+        feature_type = _normalize_feature_type(feature.featuretype)
 
-        if ftype in TRANSCRIPT_FEATURE_TYPES:
+        if feature_type in TRANSCRIPT_FEATURE_TYPES:
             transcript_id = _first_attr(feature, ["transcript_id", "ID", "Name"]) or feature.id
             if transcript_id:
                 transcript_meta[transcript_id] = (chrom, strand)
@@ -207,7 +237,7 @@ def _build_gene_model_from_db(db: gffutils.FeatureDB) -> GeneModel:
                 elif maybe_gene:
                     transcript_gene.setdefault(transcript_id, maybe_gene)
 
-        if ftype == RecordType.EXON:
+        if feature_type == RecordType.EXON:
             transcript_id = _first_attr(feature, ["transcript_id", "Parent", "ID"])
             if transcript_id is None:
                 continue
@@ -220,7 +250,7 @@ def _build_gene_model_from_db(db: gffutils.FeatureDB) -> GeneModel:
             elif parents and transcript_id not in transcript_gene:
                 transcript_gene[transcript_id] = parents[0]
 
-        if ftype in CDS_FEATURE_TYPES:
+        if feature_type in CDS_FEATURE_TYPES:
             transcript_id = _first_attr(feature, ["transcript_id", "Parent", "ID"])
             if transcript_id is None:
                 continue
@@ -266,7 +296,11 @@ def _build_gene_model_from_db(db: gffutils.FeatureDB) -> GeneModel:
 
         gene = _get_or_create_gene(model, gene_records, gene_id, chrom, strand, minpos, maxpos)
 
-        iso_attr = {AttrKey.PARENT: gene.id, AttrKey.NAME: transcript_id, AttrKey.ID: transcript_id}
+        iso_attr = {
+            AttrKey.PARENT: gene.id,
+            AttrKey.NAME: transcript_id,
+            AttrKey.ID: transcript_id,
+        }
         isoform = Isoform(transcript_id, minpos, maxpos, chrom, strand, attr=iso_attr)
         for exon_feature in exons:
             exon = Exon(
@@ -286,8 +320,8 @@ def _build_gene_model_from_db(db: gffutils.FeatureDB) -> GeneModel:
             }
             mrna_record = mRNA(transcript_id, minpos, maxpos, chrom, strand, attr=mrna_attr)
             for cds_feature in cds_records:
-                ftype = cds_feature.featuretype.lower()
-                if ftype == "cds":
+                feature_type = _normalize_feature_type(cds_feature.featuretype)
+                if feature_type == RecordType.CDS:
                     cds = CDS(
                         cds_feature.start,
                         cds_feature.end,
@@ -295,7 +329,7 @@ def _build_gene_model_from_db(db: gffutils.FeatureDB) -> GeneModel:
                         strand,
                         _feature_attr_map(cds_feature),
                     )
-                elif ftype == "five_prime_utr":
+                elif feature_type == RecordType.FIVE_PRIME_UTR:
                     cds = FP_UTR(
                         cds_feature.start,
                         cds_feature.end,
@@ -303,7 +337,7 @@ def _build_gene_model_from_db(db: gffutils.FeatureDB) -> GeneModel:
                         strand,
                         _feature_attr_map(cds_feature),
                     )
-                else:
+                elif feature_type == RecordType.THREE_PRIME_UTR:
                     cds = TP_UTR(
                         cds_feature.start,
                         cds_feature.end,
@@ -311,6 +345,8 @@ def _build_gene_model_from_db(db: gffutils.FeatureDB) -> GeneModel:
                         strand,
                         _feature_attr_map(cds_feature),
                     )
+                else:
+                    continue
                 gene.addCDS(mrna_record, cds)
 
     model.makeSortedModel()

@@ -32,3 +32,25 @@ def test_load_gene_models_writes_intron_cache(tmp_path: Path) -> None:
     assert rows
     assert all(len(row) == 7 for row in rows)
     assert {"GENE1", "GENE2"} == {row[3] for row in rows}
+
+
+def test_load_gene_models_normalizes_transcript_alias(tmp_path: Path) -> None:
+    """`transcript` featuretype aliases should normalize to canonical mRNA."""
+    gff_path = tmp_path / "alias.gff3"
+    gff_path.write_text(
+        "\n".join(
+            [
+                "chr1\ttest\tgene\t1\t100\t.\t+\t.\tID=gene1;Name=gene1",
+                "chr1\ttest\ttranscript\t1\t100\t.\t+\t.\tID=tx1;Parent=gene1",
+                "chr1\ttest\texon\t1\t100\t.\t+\t.\tID=ex1;Parent=tx1;gene_id=gene1;transcript_id=tx1",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    model = load_gene_models(str(gff_path))
+    genes = model.getAllGenes()
+    assert len(genes) == 1
+    assert genes[0].id == "GENE1"
+    assert "tx1" in genes[0].isoforms
