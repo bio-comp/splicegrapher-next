@@ -20,15 +20,6 @@ from SpliceGrapher.shared.progress import ProgressIndicator
 
 LOGGER = structlog.get_logger(__name__)
 
-# Header tags
-HEADER_HD_TAG = SamHeaderTag.HD
-HEADER_LN_TAG = SamHeaderTag.LN
-HEADER_SN_TAG = SamHeaderTag.SN
-HEADER_SO_TAG = SamHeaderTag.SO
-HEADER_SQ_TAG = SamHeaderTag.SQ
-HEADER_VN_TAG = SamHeaderTag.VN
-HEADER_SQ_LINE = SamHeaderLine.SQ
-
 # SAM files have the following tab-delimited columns:
 # Column  Value
 # 0       QNAME -- Query pair NAME if paired; or Query NAME if unpaired
@@ -77,22 +68,10 @@ CIGAR_TOKEN = re.compile("[0-9]+[A-Z]")
 
 PYSAM_CIGAR = "MIDNSHP=X"
 
-# Defined in pysam documentation, but evidently
-# not in the Python code.
-BAM_CMATCH = 0
-BAM_CINS = 1
-BAM_CDEL = 2
-BAM_CREF_SKIP = 3
-BAM_CSOFT_CLIP = 4
-BAM_CHARD_CLIP = 5
-BAM_CPAD = 6
-BAM_CEQUAL = 7
-BAM_CDIFF = 8
-
 # Our own lists for convenience
-PYSAM_MERGE_OPS = [BAM_CINS, BAM_CSOFT_CLIP, BAM_CHARD_CLIP]
-PYSAM_IGNORE_OPS = [BAM_CDEL, BAM_CPAD]
-PYSAM_SAVE_OPS = [BAM_CMATCH, BAM_CEQUAL, BAM_CDIFF, BAM_CREF_SKIP]
+PYSAM_MERGE_OPS = [pysam.CINS, pysam.CSOFT_CLIP, pysam.CHARD_CLIP]
+PYSAM_IGNORE_OPS = [pysam.CDEL, pysam.CPAD]
+PYSAM_SAVE_OPS = [pysam.CMATCH, pysam.CEQUAL, pysam.CDIFF, pysam.CREF_SKIP]
 
 NULL_CIGAR = "*"
 NULL_CHROMOSOME = "*"
@@ -191,13 +170,13 @@ def _tokenize_cigar_tuples(cigar_tuples):
 
     tokens = []
     for op, size in cigar_tuples:
-        if op in [BAM_CMATCH, BAM_CEQUAL, BAM_CDIFF]:
+        if op in [pysam.CMATCH, pysam.CEQUAL, pysam.CDIFF]:
             code = "M"
-        elif op == BAM_CREF_SKIP:
+        elif op == pysam.CREF_SKIP:
             code = "N"
-        elif op == BAM_CDEL:
+        elif op == pysam.CDEL:
             code = "D"
-        elif op in [BAM_CINS, BAM_CSOFT_CLIP, BAM_CHARD_CLIP, BAM_CPAD]:
+        elif op in [pysam.CINS, pysam.CSOFT_CLIP, pysam.CHARD_CLIP, pysam.CPAD]:
             continue
         else:
             continue
@@ -226,10 +205,10 @@ def _next_match_anchor(cigar_tuples, start_idx):
     """Return the contiguous downstream match length used as junction anchor."""
     anchor = 0
     for op, size in cigar_tuples[start_idx:]:
-        if op in [BAM_CMATCH, BAM_CEQUAL, BAM_CDIFF]:
+        if op in [pysam.CMATCH, pysam.CEQUAL, pysam.CDIFF]:
             anchor += size
             continue
-        if op in [BAM_CINS, BAM_CSOFT_CLIP, BAM_CHARD_CLIP, BAM_CPAD]:
+        if op in [pysam.CINS, pysam.CSOFT_CLIP, pysam.CHARD_CLIP, pysam.CPAD]:
             continue
         break
     return anchor
@@ -250,20 +229,20 @@ def _build_splice_junctions(chromosome, start_pos, cigar_tuples, strand, jct_cod
     left_anchor = 0
 
     for idx, (op, size) in enumerate(cigar_tuples):
-        if op in [BAM_CMATCH, BAM_CEQUAL, BAM_CDIFF]:
+        if op in [pysam.CMATCH, pysam.CEQUAL, pysam.CDIFF]:
             left_anchor += size
             reference_pos += size
             continue
 
-        if op in [BAM_CINS, BAM_CSOFT_CLIP, BAM_CHARD_CLIP, BAM_CPAD]:
+        if op in [pysam.CINS, pysam.CSOFT_CLIP, pysam.CHARD_CLIP, pysam.CPAD]:
             continue
 
-        if op == BAM_CDEL:
+        if op == pysam.CDEL:
             reference_pos += size
             left_anchor = 0
             continue
 
-        if op != BAM_CREF_SKIP:
+        if op != pysam.CREF_SKIP:
             continue
 
         donor = reference_pos - 1
@@ -554,10 +533,10 @@ def pysamAttributesToStrings(pysamAttributes):
 def pysamChromosomeMap(pysamFile):
     """Builds a map of pysam indexes to their corresponding chromosome names."""
     result = {}
-    if HEADER_SQ_TAG in pysamFile.header:
-        chromList = pysamFile.header[HEADER_SQ_TAG]
+    if SamHeaderTag.SQ in pysamFile.header:
+        chromList = pysamFile.header[SamHeaderTag.SQ]
         for i in range(len(chromList)):
-            result[str(i)] = chromList[i][HEADER_SN_TAG]
+            result[str(i)] = chromList[i][SamHeaderTag.SN]
     return result
 
 
@@ -572,26 +551,26 @@ def pysamHeaders(pysamFile):
     """Returns a list of header strings associated with a pysam file."""
     result = []
     hdict = pysamFile.header
-    if HEADER_HD_TAG in hdict:
-        valdict = hdict[HEADER_HD_TAG]
-        hstring = "@%s" % HEADER_HD_TAG
-        for k in [HEADER_VN_TAG, HEADER_SO_TAG]:
+    if SamHeaderTag.HD in hdict:
+        valdict = hdict[SamHeaderTag.HD]
+        hstring = "@%s" % SamHeaderTag.HD
+        for k in [SamHeaderTag.VN, SamHeaderTag.SO]:
             if k in valdict:
                 hstring += "\t%s:%s" % (k, valdict[k])
         result.append(hstring + "\n")
 
-    if HEADER_SQ_TAG in hdict:
-        seqList = hdict[HEADER_SQ_TAG]
+    if SamHeaderTag.SQ in hdict:
+        seqList = hdict[SamHeaderTag.SQ]
         for seq in seqList:
             # @SQ SN:Chr4 LN:18585056
             result.append(
                 "@%s\t%s:%s\t%s:%s\n"
                 % (
-                    HEADER_SQ_TAG,
-                    HEADER_SN_TAG,
-                    seq[HEADER_SN_TAG],
-                    HEADER_LN_TAG,
-                    seq[HEADER_LN_TAG],
+                    SamHeaderTag.SQ,
+                    SamHeaderTag.SN,
+                    seq[SamHeaderTag.SN],
+                    SamHeaderTag.LN,
+                    seq[SamHeaderTag.LN],
                 )
             )
     return result
@@ -609,7 +588,7 @@ def pysamMergeCigar(pysamCigar):
         i += 1
     # starts with an intron; something's wrong
     prev = pysamCigar[i]
-    if prev[0] == BAM_CREF_SKIP:
+    if prev[0] == pysam.CREF_SKIP:
         raise ValueError("CIGAR error: starts with splice junction")
 
     result = [prev] if prev[0] in PYSAM_SAVE_OPS else []
@@ -618,13 +597,13 @@ def pysamMergeCigar(pysamCigar):
         oper = curr[0]
         length = curr[1]
         if prev[0] in PYSAM_MERGE_OPS:
-            if oper == BAM_CREF_SKIP:
+            if oper == pysam.CREF_SKIP:
                 raise ValueError("CIGAR error: splice junction preceded by clip/insert/delete")
             curr = (oper, length + prev[1])
         elif oper == prev[0]:
             result[-1] = (prev[0], length + prev[1])
             continue
-        elif oper in PYSAM_MERGE_OPS and prev[0] == BAM_CMATCH:
+        elif oper in PYSAM_MERGE_OPS and prev[0] == pysam.CMATCH:
             result[-1] = (prev[0], length + prev[1])
 
         if oper in PYSAM_SAVE_OPS:
@@ -656,7 +635,7 @@ def pysamReadDepths(bamFile, chromosome, gene, **args):
             cigar = pysamMergeCigar(r.cigar)
             pos = r.pos + 1
             for tok in cigar:
-                if tok[0] == BAM_CMATCH:
+                if tok[0] == pysam.CMATCH:
                     start = max(pos, loBound) - loBound
                     end = min(upBound, pos + tok[1]) - loBound
                     for i in range(start, end):
@@ -722,7 +701,7 @@ def pysamSpliceJunctions(pysamRecord, chrMap):
         pass
 
     result = []
-    exons = [d[1] for d in cigarDuples if d[0] == BAM_CMATCH]
+    exons = [d[1] for d in cigarDuples if d[0] == pysam.CMATCH]
     k = 0
     chrom = chrMap[str(pysamRecord.tid)]
     strand = pysamStrand(pysamRecord, tagDict)
@@ -1213,12 +1192,12 @@ def getSamSequences(samRecords, **args):
     result = {}
     headers = getSamHeaders(samRecords, **args)
     for line in headers:
-        if not line.startswith(HEADER_SQ_LINE):
+        if not line.startswith(SamHeaderLine.SQ):
             continue
         parts = line.strip().split("\t")
         sdict = dict([tuple(s.split(":")) for s in parts[1:]])
         try:
-            result[sdict[HEADER_SN_TAG]] = sdict[HEADER_LN_TAG]
+            result[sdict[SamHeaderTag.SN]] = sdict[SamHeaderTag.LN]
         except KeyError:
             continue
     return result
