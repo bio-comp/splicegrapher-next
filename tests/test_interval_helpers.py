@@ -53,3 +53,23 @@ def test_batch_overlaps_uses_shared_interval_index() -> None:
     result = batch_overlaps(index, queries, inclusive=True)
 
     assert result == [[intervals[0]], [intervals[1], intervals[2]]]
+
+
+def test_in_memory_interval_index_overlap_parity_handles_nested_long_intervals() -> None:
+    intervals = [
+        _Interval(1, 100),
+        _Interval(50, 60),
+        _Interval(70, 80),
+        _Interval(90, 95),
+        _Interval(110, 120),
+    ]
+    query = _Interval(92, 93)
+    index = InMemoryIntervalIndex(intervals)
+
+    legacy = [
+        interval
+        for interval in intervals
+        if interval.minpos <= query.maxpos and query.minpos <= interval.maxpos
+    ]
+
+    assert index.overlaps(query) == legacy

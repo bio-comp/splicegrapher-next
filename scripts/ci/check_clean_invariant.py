@@ -40,6 +40,22 @@ MAGIC_STRING_CONTROL_FLOW_LITERALS: tuple[str, ...] = (
     "predicted",
     "unresolved",
 )
+OVERLAP_CONTROL_FLOW_PATHS: tuple[str, ...] = (
+    "SpliceGrapher/SpliceGraph.py",
+    "SpliceGrapher/formats/GeneModel.py",
+)
+# Ratchet baseline: existing manual overlap logic is tolerated, but new instances
+# in protected modules must route through interval helper abstractions.
+BASELINE_MANUAL_OVERLAP_LINES: dict[str, set[str]] = {
+    "SpliceGrapher/SpliceGraph.py": {
+        "if e.minpos < n.minpos and n.maxpos < e.maxpos:",
+        "return self.maxpos > o.minpos and self.minpos < o.maxpos",
+    },
+    "SpliceGrapher/formats/GeneModel.py": {
+        "return strand == self.strand and self.minpos <= pos <= self.maxpos",
+        "if g.maxpos < minpos or g.minpos > maxpos:",
+    },
+}
 
 
 def _is_allowed_new_ignore_target(path: str) -> bool:
@@ -153,6 +169,54 @@ def find_magic_string_control_flow(
     return violations
 
 
+def _looks_like_manual_overlap_line(stripped: str) -> bool:
+    if stripped.startswith("#"):
+        return False
+    if not ("if " in stripped or "elif " in stripped or stripped.startswith("return ")):
+        return False
+    if "minpos" not in stripped or "maxpos" not in stripped:
+        return False
+    if " and " not in stripped and " or " not in stripped:
+        return False
+    if not any(token in stripped for token in ("<", ">", "<=", ">=")):
+        return False
+    if "intervals_overlap(" in stripped or "interval_contains(" in stripped:
+        return False
+    return True
+
+
+def find_manual_overlap_lines(
+    *,
+    source_by_path: dict[str, str],
+    protected_paths: tuple[str, ...],
+) -> dict[str, set[str]]:
+    """Collect normalized manual overlap control-flow lines per protected path."""
+    result: dict[str, set[str]] = {}
+    for rel_path in protected_paths:
+        source = source_by_path.get(rel_path, "")
+        for line in source.splitlines():
+            stripped = line.strip()
+            if not _looks_like_manual_overlap_line(stripped):
+                continue
+            result.setdefault(rel_path, set()).add(stripped)
+    return result
+
+
+def detect_manual_overlap_growth(
+    *,
+    current: dict[str, set[str]],
+    baseline: dict[str, set[str]],
+) -> list[str]:
+    """Return violations where manual overlap logic expands in protected modules."""
+    violations: list[str] = []
+    for path in sorted(current):
+        known = baseline.get(path, set())
+        unexpected = sorted(current[path] - known)
+        for line in unexpected:
+            violations.append(f"{path}: unexpected manual-overlap control flow -> {line}")
+    return violations
+
+
 def main() -> int:
     repo_root = Path(__file__).resolve().parents[2]
     current_ignores = load_per_file_ignores(repo_root / "pyproject.toml")
@@ -170,6 +234,15 @@ def main() -> int:
     magic_string_violations = find_magic_string_control_flow(
         source_by_path=source_by_path,
         protected_paths=ENUM_CONTROL_FLOW_PATHS,
+    )
+    overlap_sources = _load_sources(repo_root, OVERLAP_CONTROL_FLOW_PATHS)
+    current_manual_overlap = find_manual_overlap_lines(
+        source_by_path=overlap_sources,
+        protected_paths=OVERLAP_CONTROL_FLOW_PATHS,
+    )
+    manual_overlap_violations = detect_manual_overlap_growth(
+        current=current_manual_overlap,
+        baseline=BASELINE_MANUAL_OVERLAP_LINES,
     )
 
     if ignore_violations:
@@ -191,7 +264,19 @@ def main() -> int:
         for violation in magic_string_violations:
             sys.stdout.write(f"- {violation}\n")
 
-    if ignore_violations or executable_violations or magic_string_violations:
+    if manual_overlap_violations:
+        sys.stdout.write(
+            "Clean-invariant failure: new manual overlap control flow found in protected modules.\n"
+        )
+        for violation in manual_overlap_violations:
+            sys.stdout.write(f"- {violation}\n")
+
+    if (
+        ignore_violations
+        or executable_violations
+        or magic_string_violations
+        or manual_overlap_violations
+    ):
         return 1
 
     sys.stdout.write("Clean-invariant checks passed.\n")
