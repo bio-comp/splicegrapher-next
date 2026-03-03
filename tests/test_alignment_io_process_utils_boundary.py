@@ -24,6 +24,7 @@ def test_alignment_io_removes_manual_record_parser_and_list_growth_antipattern()
     ).read_text(encoding="utf-8")
     assert "class AlignmentRecord" not in source
     assert "+= [0] * len(" not in source
+    assert ".tolist()" not in source
 
 
 @pytest.mark.parametrize(

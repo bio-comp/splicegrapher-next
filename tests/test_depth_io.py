@@ -5,6 +5,8 @@ from __future__ import annotations
 import io
 from pathlib import Path
 
+import numpy
+
 
 def _junction_signature(junction: object) -> tuple[object, ...]:
     return (
@@ -56,7 +58,22 @@ def test_depth_io_read_depths_matches_legacy_parser(tmp_path: Path) -> None:
     legacy_depths, legacy_junctions = readDepths(depths_path)
     new_depths, new_junctions = read_depths(depths_path, parse_junction=stringToJunction)
 
-    assert new_depths == legacy_depths
+    assert new_depths.keys() == legacy_depths.keys()
+    for chrom in new_depths:
+        assert numpy.array_equal(new_depths[chrom], numpy.asarray(legacy_depths[chrom]))
     assert sorted(_junction_signature(j) for j in new_junctions["chr1"]) == sorted(
         _junction_signature(j) for j in legacy_junctions["chr1"]
     )
+
+
+def test_depth_io_read_depths_respects_maxpos_without_extending_depth_array() -> None:
+    from SpliceGrapher.formats.depth_io import read_depths
+
+    stream = io.StringIO("C\tchr1\t10\nD\tchr1\t10:5\n")
+
+    depths, junctions = read_depths(stream, maxpos=3, junctions=False)
+
+    assert "chr1" in depths
+    assert len(depths["chr1"]) == 3
+    assert numpy.array_equal(depths["chr1"], numpy.array([5, 5, 5], dtype=numpy.int32))
+    assert junctions == {}

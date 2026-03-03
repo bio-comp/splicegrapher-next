@@ -4,7 +4,6 @@ import io
 import os
 import re
 import sys
-import tempfile
 from collections.abc import Iterator
 from contextlib import contextmanager
 
@@ -111,10 +110,11 @@ def _synthesize_sq_headers(records: list[str]) -> list[str]:
 
 
 @contextmanager
-def _materialized_alignment_path(source: object) -> Iterator[str]:
-    """Materialize list/stream SAM inputs into a temporary SAM file for pysam."""
+def _open_alignment_source(source: object, *, reference_fasta=None):
+    """Open paths directly and wrap in-memory SAM lines in a BytesIO buffer."""
     if _is_alignment_path(source):
-        yield str(source)
+        with _open_alignment_file(str(source), reference_fasta=reference_fasta) as alignment:
+            yield alignment
         return
 
     if isinstance(source, str):
@@ -122,7 +122,6 @@ def _materialized_alignment_path(source: object) -> Iterator[str]:
 
     headers: list[str] = []
     records: list[str] = []
-
     for raw_line in _iter_sam_lines(source):
         line = raw_line if raw_line.endswith("\n") else f"{raw_line}\n"
         if line.startswith("@"):
@@ -130,22 +129,22 @@ def _materialized_alignment_path(source: object) -> Iterator[str]:
         elif line.strip():
             records.append(line)
 
-    if not any(line.startswith("@HD") for line in headers):
-        headers.insert(0, "@HD\tVN:1.6\tSO:unknown\n")
     if not any(line.startswith("@SQ") for line in headers):
         headers.extend(_synthesize_sq_headers(records))
+    if not any(line.startswith("@HD") for line in headers):
+        headers.insert(0, "@HD\tVN:1.6\tSO:unknown\n")
 
-    tmp = tempfile.NamedTemporaryFile("w", suffix=".sam", delete=False)
+    memory_buffer = io.BytesIO()
     try:
-        with tmp as handle:
-            handle.writelines(headers)
-            handle.writelines(records)
-        yield tmp.name
+        for header in headers:
+            memory_buffer.write(header.encode("utf-8"))
+        for record in records:
+            memory_buffer.write(record.encode("utf-8"))
+        memory_buffer.seek(0)
+        with pysam.AlignmentFile(memory_buffer, "r") as alignment:
+            yield alignment
     finally:
-        try:
-            os.unlink(tmp.name)
-        except FileNotFoundError:
-            pass
+        memory_buffer.close()
 
 
 def _open_alignment_file(path, *, reference_fasta=None):
@@ -199,9 +198,8 @@ class AlignmentStreamer:
 
     @contextmanager
     def open_alignment(self):
-        with _materialized_alignment_path(self.source) as path:
-            with _open_alignment_file(path, reference_fasta=self.reference_fasta) as alignment:
-                yield alignment
+        with _open_alignment_source(self.source, reference_fasta=self.reference_fasta) as alignment:
+            yield alignment
 
     def stream(self, *, chromosomes=None):
         chrom_set = makeChromosomeSet(chromosomes)
@@ -279,9 +277,17 @@ def _build_splice_junctions(chromosome, start_pos, cigar_tuples, strand, jct_cod
     return junctions
 
 
-def _initial_depth_capacity(required_size: int, maxpos: int) -> int:
+def _record_strand(record) -> str:
+    if record.has_tag(STRAND_TAG):
+        return record.get_tag(STRAND_TAG)
+    return "-" if record.is_reverse else "+"
+
+
+def _initial_depth_capacity(required_size: int, maxpos: int, reference_length: int | None) -> int:
     if maxpos < sys.maxsize:
         return maxpos + 1
+    if reference_length is not None and reference_length >= 0:
+        return max(required_size, reference_length + 2)
     return max(required_size, 1024)
 
 
@@ -293,6 +299,14 @@ def _ensure_depth_capacity(depth_array: numpy.ndarray, required_size: int) -> nu
     expanded = numpy.zeros(new_size, dtype=depth_array.dtype)
     expanded[: depth_array.size] = depth_array
     return expanded
+
+
+def _depth_map_to_arrays(depths: dict[str, list[int] | numpy.ndarray]) -> dict[str, numpy.ndarray]:
+    """Normalize depth maps to int32 NumPy arrays."""
+    return {
+        chrom: numpy.asarray(chrom_depths, dtype=numpy.int32)
+        for chrom, chrom_depths in depths.items()
+    }
 
 
 def _collect_pysam_data(
@@ -339,8 +353,13 @@ def _collect_pysam_data(
             required_size = reference_end + 2
 
             if chrom not in depths:
+                reference_length = None
+                try:
+                    reference_length = alignment.get_reference_length(chrom_name)
+                except (KeyError, ValueError):
+                    reference_length = None
                 depths[chrom] = numpy.zeros(
-                    _initial_depth_capacity(required_size, maxpos),
+                    _initial_depth_capacity(required_size, maxpos, reference_length),
                     dtype=numpy.int32,
                 )
                 limit[chrom] = 0
@@ -378,11 +397,7 @@ def _collect_pysam_data(
             if not junctions or not rec.cigartuples:
                 continue
 
-            strand = (
-                rec.get_tag(STRAND_TAG)
-                if rec.has_tag(STRAND_TAG)
-                else ("-" if rec.is_reverse else "+")
-            )
+            strand = _record_strand(rec)
             jct_code = rec.get_tag(JCT_CODE_TAG) if rec.has_tag(JCT_CODE_TAG) else ""
             jct_list = _build_splice_junctions(chrom, start_pos, rec.cigartuples, strand, jct_code)
             if not jct_list:
@@ -406,7 +421,7 @@ def _collect_pysam_data(
         else:
             keep = min(limit[chrom], depth_array.size)
 
-        normalized_depths[chrom] = depth_array[:keep].tolist()
+        normalized_depths[chrom] = depth_array[:keep].copy()
 
     normalized_junctions = {}
     if junctions:
@@ -427,12 +442,9 @@ def _collect_pysam_data(
 
 def pysamStrand(pysamRecord, tagDict=None):
     """Convenience method returns the strand given by the pysam record."""
-    if not tagDict:
-        tagDict = dict(pysamRecord.tags)
-    try:
+    if tagDict and STRAND_TAG in tagDict:
         return tagDict[STRAND_TAG]
-    except KeyError:
-        return "-" if pysamRecord.is_reverse else "+"
+    return _record_strand(pysamRecord)
 
 
 def pysamReadDepths(bamFile, chromosome, gene, *, margin=0, verbose=False):
@@ -470,7 +482,7 @@ def pysamReadDepths(bamFile, chromosome, gene, *, margin=0, verbose=False):
             gene_id=gene.id,
         )
 
-    return loBound, result.tolist()
+    return loBound, result
 
 
 def getSamAlignments(
@@ -510,7 +522,7 @@ def getSamDepths(
             junctions=False,
             verbose=verbose,
         )
-        return depths
+        return _depth_map_to_arrays(depths)
 
     depths, _ = _collect_pysam_data(
         samRecords,
@@ -526,7 +538,7 @@ def getSamHeaders(samRecords, *, reference_fasta=None):
     """Reads a SAM file and returns just the header strings as a list."""
     streamer = AlignmentStreamer(samRecords, reference_fasta=reference_fasta)
     with streamer.open_alignment() as sam_stream:
-        return [line.strip() for line in sam_stream.text.splitlines() if line.strip()]
+        return [line.strip() for line in str(sam_stream.header).splitlines() if line.strip()]
 
 
 def getSamHeaderInfo(samStream, *, verbose=False, reference_fasta=None):
@@ -598,7 +610,7 @@ def getSamReadData(
             junctions=junctions,
             verbose=verbose,
         )
-        return depths, jcts
+        return _depth_map_to_arrays(depths), jcts
 
     _ = verbose
     return _collect_pysam_data(
