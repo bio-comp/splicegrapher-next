@@ -4,16 +4,18 @@ from __future__ import annotations
 
 import os
 import sys
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from os import PathLike
 from pathlib import Path
 from typing import BinaryIO, Protocol, TextIO, TypeAlias, TypeVar
+
+import numpy
 
 from SpliceGrapher.core.enums import ShortReadCode
 from SpliceGrapher.shared.file_utils import ez_open
 from SpliceGrapher.shared.progress import ProgressIndicator
 
-DepthValues: TypeAlias = list[int]
+DepthValues: TypeAlias = numpy.ndarray
 DepthMap: TypeAlias = dict[str, DepthValues]
 DepthSource: TypeAlias = str | PathLike[str] | TextIO | BinaryIO
 
@@ -36,12 +38,23 @@ def _as_text(line: str | bytes) -> str:
     return line.decode("utf-8") if isinstance(line, bytes) else line
 
 
-def _load_lines(source: DepthSource) -> list[str]:
+def _load_lines(source: DepthSource) -> Iterator[str]:
     if isinstance(source, (str, os.PathLike)):
         with ez_open(Path(source)) as stream:
-            return list(stream.readlines())
-    if hasattr(source, "readlines"):
-        return [_as_text(line) for line in source.readlines()]
+            for line in stream:
+                yield _as_text(line)
+        return
+    if hasattr(source, "__iter__"):
+        for line in source:
+            yield _as_text(line)
+        return
+    if hasattr(source, "readline"):
+        while True:
+            line = source.readline()
+            if line == "" or line == b"":
+                break
+            yield _as_text(line)
+        return
     raise ValueError(f"Unrecognized depth record source: {type(source)!r}")
 
 
@@ -63,9 +76,15 @@ def is_depths_file(
         with ez_open(path) as stream:
             first_line = stream.readline()
     elif hasattr(source, "read"):
+        reset_position = None
+        if hasattr(source, "tell") and hasattr(source, "seek"):
+            try:
+                reset_position = source.tell()
+            except (OSError, ValueError):
+                reset_position = None
         first_line = source.readline()
-        if hasattr(source, "seek"):
-            source.seek(0)
+        if reset_position is not None:
+            source.seek(reset_position)
     else:
         return False
 
@@ -92,7 +111,7 @@ def read_depths(
 
     depth_map: DepthMap = {}
     junction_map: JunctionMap[TJunction] = {}
-    chromosome_limit = maxpos
+    chromosome_limits: dict[str, int] = {}
 
     indicator = ProgressIndicator(1000000, verbose=verbose)
     for text_line in _load_lines(source):
@@ -107,7 +126,8 @@ def read_depths(
             if not depths:
                 continue
             chromosome_limit = min(maxpos, int(parts[2]))
-            depth_map[chrom] = [0] * chromosome_limit
+            chromosome_limits[chrom] = chromosome_limit
+            depth_map[chrom] = numpy.zeros(chromosome_limit, dtype=numpy.int32)
             continue
 
         if record_type == jct_code:
@@ -119,6 +139,7 @@ def read_depths(
                 continue
             if junction.minAnchor() < minanchor:
                 continue
+            chromosome_limit = chromosome_limits.get(chrom, maxpos)
             if junction.minpos > chromosome_limit:
                 continue
             junction_map.setdefault(chrom, []).append(junction)
@@ -131,12 +152,16 @@ def read_depths(
 
         run_length_string = parts[2]
         position = 0
+        chrom_limit = len(depth_map[chrom])
         for run_length_pair in run_length_string.split(","):
-            run_length, height = [int(item) for item in run_length_pair.split(":")]
-            upper_bound = min(maxpos, position + run_length)
-            depth_map[chrom][position:upper_bound] = [height] * run_length
+            run_length_str, height_str = run_length_pair.split(":", 1)
+            run_length = int(run_length_str)
+            height = int(height_str)
+            upper_bound = min(chrom_limit, position + run_length)
+            if upper_bound > position:
+                depth_map[chrom][position:upper_bound] = height
             position += run_length
-            if position >= maxpos:
+            if position >= chrom_limit:
                 break
 
     indicator.finish()

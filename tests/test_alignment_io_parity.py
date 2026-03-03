@@ -8,7 +8,7 @@ from tests.helpers.legacy_depth_reference import compute_depths_and_junctions
 
 
 def _depth_window(
-    depths_by_chrom: dict[str, list[int]], chrom: str, start: int, end: int
+    depths_by_chrom: dict[str, numpy.ndarray], chrom: str, start: int, end: int
 ) -> numpy.ndarray:
     return numpy.array(depths_by_chrom[chrom][start : end + 1], dtype=int)
 

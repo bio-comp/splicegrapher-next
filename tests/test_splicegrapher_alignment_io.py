@@ -1,7 +1,10 @@
 from pathlib import Path
 
+import numpy
+
 from SpliceGrapher.formats.alignment_io import (
     getSamDepths,
+    getSamHeaders,
     getSamJunctions,
     getSamReadData,
 )
@@ -16,6 +19,15 @@ def _junction_signature(junctions_by_chrom):
     return signature
 
 
+def _depth_maps_match(
+    left_depths: dict[str, numpy.ndarray],
+    right_depths: dict[str, numpy.ndarray],
+) -> bool:
+    if left_depths.keys() != right_depths.keys():
+        return False
+    return all(numpy.array_equal(left_depths[chrom], right_depths[chrom]) for chrom in left_depths)
+
+
 def test_get_sam_read_data_matches_between_sam_and_bam(tmp_path: Path):
     """SAM and BAM inputs should produce equivalent depth/junction summaries."""
     fixture = build_alignment_fixture(tmp_path, repeat_scale=24)
@@ -23,9 +35,7 @@ def test_get_sam_read_data_matches_between_sam_and_bam(tmp_path: Path):
     sam_depths, sam_junctions = getSamReadData(str(fixture.sam))
     bam_depths, bam_junctions = getSamReadData(str(fixture.bam))
 
-    assert sam_depths.keys() == bam_depths.keys()
-    chrom = fixture.chrom
-    assert sam_depths[chrom] == bam_depths[chrom]
+    assert _depth_maps_match(sam_depths, bam_depths)
     assert _junction_signature(sam_junctions) == _junction_signature(bam_junctions)
 
 
@@ -39,8 +49,7 @@ def test_get_sam_read_data_supports_cram_with_reference(tmp_path: Path):
         reference_fasta=str(fixture.reference_fasta),
     )
 
-    chrom = fixture.chrom
-    assert cram_depths[chrom] == bam_depths[chrom]
+    assert _depth_maps_match(cram_depths, bam_depths)
     assert _junction_signature(cram_junctions) == _junction_signature(bam_junctions)
 
 
@@ -69,3 +78,16 @@ def test_get_sam_depths_and_junctions_respect_chromosome_filter(tmp_path: Path):
     assert set(depths.keys()) == {fixture.chrom}
     assert set(junctions.keys()) == {fixture.chrom}
     assert junctions[fixture.chrom]
+
+
+def test_get_sam_headers_reads_bam_and_sam_headers(tmp_path: Path):
+    """Header helper should work for both SAM text and BAM binary inputs."""
+    fixture = build_alignment_fixture(tmp_path, repeat_scale=8)
+
+    sam_headers = getSamHeaders(str(fixture.sam))
+    bam_headers = getSamHeaders(str(fixture.bam))
+
+    assert any(line.startswith("@HD") for line in sam_headers)
+    assert any(line.startswith("@SQ") for line in sam_headers)
+    assert any(line.startswith("@HD") for line in bam_headers)
+    assert any(line.startswith("@SQ") for line in bam_headers)
