@@ -32,6 +32,21 @@ def test_feature_search_supports_recursive_midpoint_indexing() -> None:
     assert featureSearch(features, query) is features[1]
 
 
+def test_mrna_sorted_exons_uses_explicit_minintron_keyword() -> None:
+    transcript = gm.mRNA("tx1", 1, 20, "chr1", "+")
+    transcript.addCDS(gm.CDS(1, 5, "chr1", "+"))
+    transcript.addCDS(gm.CDS(7, 10, "chr1", "+"))
+
+    merged = transcript.sortedExons(minintron=3)
+    unmerged = transcript.sortedExons(minintron=2)
+
+    assert len(merged) == 1
+    assert len(unmerged) == 2
+
+    with pytest.raises(TypeError):
+        transcript.sortedExons(min_intron=3)  # type: ignore[call-arg]
+
+
 def test_feature_search_snake_case_api_returns_expected_match() -> None:
     features = [
         Exon(1, 10, "chr1", "+"),

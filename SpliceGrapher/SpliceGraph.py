@@ -5,15 +5,22 @@ Module that encapsulates a splice graph.
 from __future__ import annotations
 
 import sys
+from collections.abc import Iterator
 from typing import TextIO
 
 from SpliceGrapher.core.enum_coercion import coerce_enum
-from SpliceGrapher.core.enums import AttrKey, EdgeType, NodeDisposition, RecordType, Strand
+from SpliceGrapher.core.enums import (
+    AttrKey,
+    EdgeType,
+    NodeDisposition,
+    RecordType,
+    Strand,
+)
 from SpliceGrapher.core.interval_helpers import interval_contains, intervals_overlap
 from SpliceGrapher.shared.collection_utils import as_list
 from SpliceGrapher.shared.file_utils import ez_open
 from SpliceGrapher.shared.format_utils import list_string
-from SpliceGrapher.shared.process_utils import getAttribute, idFactory
+from SpliceGrapher.shared.process_utils import idFactory
 from SpliceGrapher.shared.progress import ProgressIndicator
 
 # Attributes used in standard GFF3 files:
@@ -184,7 +191,9 @@ def altSiteEventList(nodes, siteType, verbose=False):
     of a set of nodes involved in the same event.  Note: assumes the graph's
     nodes have already been annotated (see detectAltAcceptor and detectAltDonor)."""
     if siteType not in [ALT3_ABBREV, ALT5_ABBREV]:
-        raise ValueError("altNodeList called using non-alternative site type: %s" % siteType)
+        raise ValueError(
+            "altNodeList called using non-alternative site type: %s" % siteType
+        )
 
     def setString(s):
         return ",".join(["%s" % n.id for n in s])
@@ -198,7 +207,9 @@ def altSiteEventList(nodes, siteType, verbose=False):
         return []
     if verbose:
         modifier = "parents" if siteType == ALT3_ABBREV else "children"
-        sys.stderr.write("\naltSiteEventList found %d %s nodes:\n" % (len(eventNodes), siteType))
+        sys.stderr.write(
+            "\naltSiteEventList found %d %s nodes:\n" % (len(eventNodes), siteType)
+        )
         for n in eventNodes:
             sys.stderr.write("  %s\n" % n)
         sys.stderr.write("\n")
@@ -213,7 +224,9 @@ def altSiteEventList(nodes, siteType, verbose=False):
         # Grab neighboring nodes (share an edge)
         adj_n = neighborNodes(n)
         if verbose:
-            sys.stderr.write("  Node %s has %s %s\n" % (n.id, modifier, setString(adj_n)))
+            sys.stderr.write(
+                "  Node %s has %s %s\n" % (n.id, modifier, setString(adj_n))
+            )
 
         # Find other nodes with the same annotation that overlap the current one
         for m in eventNodes:
@@ -232,7 +245,9 @@ def altSiteEventList(nodes, siteType, verbose=False):
             if not neighborsContained:
                 eset.add(m)
             elif verbose:
-                sys.stderr.write("    %s overlaps %s %s (or vice versa)\n" % (n, m, modifier))
+                sys.stderr.write(
+                    "    %s overlaps %s %s (or vice versa)\n" % (n, m, modifier)
+                )
 
         # If the nodes overlapping the current node also overlap
         # distinct other nodes, merge the events into one set
@@ -241,14 +256,18 @@ def altSiteEventList(nodes, siteType, verbose=False):
         for e in eventList:
             if e & eset:
                 if verbose:
-                    sys.stderr.write("  Merging %s with %s\n" % (setString(eset), setString(e)))
+                    sys.stderr.write(
+                        "  Merging %s with %s\n" % (setString(eset), setString(e))
+                    )
                 e.update(eset)
                 stored.update(eset)
                 if verbose:
                     sys.stderr.write("  --> %s\n" % setString(e))
                 break
             elif verbose:
-                sys.stderr.write("    %s does not intersect %s\n" % (setString(eset), setString(e)))
+                sys.stderr.write(
+                    "    %s does not intersect %s\n" % (setString(eset), setString(e))
+                )
 
         if n not in stored:
             if verbose:
@@ -256,7 +275,9 @@ def altSiteEventList(nodes, siteType, verbose=False):
             eventList.append(eset)
 
     if verbose:
-        sys.stderr.write("Final result: %s\n" % ";".join([setString(e) for e in eventList]))
+        sys.stderr.write(
+            "Final result: %s\n" % ";".join([setString(e) for e in eventList])
+        )
     return eventList
 
 
@@ -273,7 +294,9 @@ def detectAltAcceptor(n, nodes, edges):
         return
     allOverlaps = set([o for o in nodes if o.parents and overlap(o, n)])
     containedEdges = set([e for e in edges if containsEdge(n, e)])
-    flankingNodes = set([e.child for e in containedEdges if overlapsAll(n, e.child.parents)])
+    flankingNodes = set(
+        [e.child for e in containedEdges if overlapsAll(n, e.child.parents)]
+    )
     parentOverlaps = set([o for o in nodes if overlapsAll(o, n.parents)])
     overlapSet = allOverlaps - parentOverlaps - flankingNodes
 
@@ -322,7 +345,9 @@ def detectAltBoth(nodes, verbose=False):
     for event in alt5Events:
         for n in event:
             nodeAcceptors = set([c.acceptorEnd() for c in n.children])
-            otherAcceptors = set([c.acceptorEnd() for m in event for c in m.children if m != n])
+            otherAcceptors = set(
+                [c.acceptorEnd() for m in event for c in m.children if m != n]
+            )
             shared = nodeAcceptors & otherAcceptors
             if not shared:
                 n.removeAltForm(ALT5_ABBREV)
@@ -332,7 +357,9 @@ def detectAltBoth(nodes, verbose=False):
     for event in alt3Events:
         for n in event:
             nodeDonors = set([c.donorEnd() for c in n.parents])
-            otherDonors = set([c.donorEnd() for m in event for c in m.parents if m != n])
+            otherDonors = set(
+                [c.donorEnd() for m in event for c in m.parents if m != n]
+            )
             shared = nodeDonors & otherDonors
             if not shared:
                 n.removeAltForm(ALT3_ABBREV)
@@ -353,7 +380,9 @@ def detectAltDonor(n, nodes, edges, verbose=False):
         return
     allOverlaps = set([o for o in nodes if o.children and overlap(o, n)])
     containedEdges = set([e for e in edges if containsEdge(n, e)])
-    flankingNodes = set([e.parent for e in containedEdges if overlapsAll(n, e.parent.children)])
+    flankingNodes = set(
+        [e.parent for e in containedEdges if overlapsAll(n, e.parent.children)]
+    )
     childOverlaps = set([o for o in nodes if overlapsAll(o, n.children)])
     overlapSet = allOverlaps - childOverlaps - flankingNodes
 
@@ -424,11 +453,12 @@ def equivalentGraphs(A, B):
     return True
 
 
-def getFirstGraph(f, **args):
+def getFirstGraph(
+    f: str | TextIO, *, annotate: bool = False, verbose: bool = False
+) -> SpliceGraph:
     """Returns just the first splice graph found in a file."""
-    annotate = getAttribute("annotate", False, **args)
     try:
-        result = next(SpliceGraphParser(f, **args))
+        result = next(SpliceGraphParser(f, verbose=verbose))
         if annotate:
             result.annotate()
         return result
@@ -463,9 +493,10 @@ def graphMinusAS(A, B):
     return result
 
 
-def graphSubtract(A, B, **args):
+def graphSubtract(
+    A: SpliceGraph, B: SpliceGraph, *, resolvedOnly: bool = True
+) -> SpliceGraph:
     """Returns a graph that represents the nodes and edges in A minus those in B."""
-    resolvedOnly = getAttribute("resolvedOnly", True, **args)
     name = "%s\\%s" % (A.getName(), B.getName())
     result = SpliceGraph(name=name, chromosome=A.chromosome, strand=A.strand)
     # Use full graph position range
@@ -555,10 +586,9 @@ def splitFiles(parser, directory=None):
         g.writeGFF(outFile)
 
 
-def updateLeaf(A, B, **args):
+def updateLeaf(A: SpliceGraph, B: SpliceGraph, *, uniqueLeaf: bool = False) -> None:
     """Method that updates leaf nodes in graph A with nodes from graph B prior to
     merging the two graphs.  We look for longer nodes with the same acceptor site."""
-    uniqueLeaf = getAttribute("uniqueLeaf", False, **args)
     mergeDict = {}
     for leaf in A.getLeaves():
         longer = [
@@ -590,15 +620,15 @@ def updateLeaf(A, B, **args):
         del A.nodeDict[node.id]
 
 
-def updateRoot(A, B, **args):
+def updateRoot(A: SpliceGraph, B: SpliceGraph, *, uniqueRoot: bool = False) -> None:
     """Method that updates root nodes in graph A using nodes from graph B prior to
     merging the two graphs.  We look for longer nodes that have the same donor site."""
-    uniqueRoot = getAttribute("uniqueRoot", False, **args)
-
     mergeDict = {}
     for root in A.getRoots():
         longer = [
-            n for n in B.nodeDict.values() if n.donorEnd() == root.donorEnd() and len(n) > len(root)
+            n
+            for n in B.nodeDict.values()
+            if n.donorEnd() == root.donorEnd() and len(n) > len(root)
         ]
         if not longer:
             continue
@@ -712,8 +742,12 @@ class SpliceGraphNode(object):
         (self.start, self.end) = (
             (self.minpos, self.maxpos) if strand == "+" else (self.maxpos, self.minpos)
         )
-        self.parents: list[SpliceGraphNode] = list(parents) if parents is not None else []
-        self.children: list[SpliceGraphNode] = list(children) if children is not None else []
+        self.parents: list[SpliceGraphNode] = (
+            list(parents) if parents is not None else []
+        )
+        self.children: list[SpliceGraphNode] = (
+            list(children) if children is not None else []
+        )
         self.attrs: dict[str, object] = {}
         self.altFormSet: set[str] = set()
         self.isoformSet: set[str] = set()
@@ -1124,7 +1158,9 @@ class SpliceGraph(object):
             idx = allNodes.index(tmpNode)
             node = allNodes[idx]
         except ValueError:
-            self.nodeDict[newId] = SpliceGraphNode(newId, start, end, self.strand, self.chromosome)
+            self.nodeDict[newId] = SpliceGraphNode(
+                newId, start, end, self.strand, self.chromosome
+            )
             node = self.nodeDict[newId]
             self.minpos = min(self.minpos, node.minpos)
             self.maxpos = max(self.maxpos, node.maxpos)
@@ -1142,12 +1178,16 @@ class SpliceGraph(object):
         try:
             parent = self.nodeDict[pid]
         except KeyError:
-            raise Exception("Error adding edge from node %s: node not found in graph" % pid)
+            raise Exception(
+                "Error adding edge from node %s: node not found in graph" % pid
+            )
 
         try:
             child = self.nodeDict[cid]
         except KeyError:
-            raise Exception("Error adding edge to node %s: node not found in graph" % cid)
+            raise Exception(
+                "Error adding edge to node %s: node not found in graph" % cid
+            )
 
         parent.addChild(child)
 
@@ -1207,7 +1247,9 @@ class SpliceGraph(object):
 
     def attributeString(self):
         """Returns a string of all graph attributes, for GFF attributes fields."""
-        return ";".join(["%s=%s" % (k, self.attrs[k]) for k in sorted(self.attrs.keys())])
+        return ";".join(
+            ["%s=%s" % (k, self.attrs[k]) for k in sorted(self.attrs.keys())]
+        )
 
     def branchingStats(self):
         """Returns the min, max and average branching factor for the nodes in the graph."""
@@ -1411,13 +1453,11 @@ class SpliceGraph(object):
                 result[iso].append(n)
         return result
 
-    def isoformGraph(self, isoNames, **args):
+    def isoformGraph(self, isoNames, *, fuzzyMatch: bool = False):
         """Returns a splice graph that represents just the given isoforms.
         Isoforms may be given as a comma-separated string, a list or a set.
         Setting 'fuzzyMatch' to True allows you to specify part of an isoform
         name in the list; it will match all isoforms that contain that part."""
-        fuzzyMatch = getAttribute("fuzzyMatch", False, **args)
-
         isoNames = as_list(isoNames)
         result = None
         for name in isoNames:
@@ -1522,14 +1562,23 @@ class SpliceGraph(object):
         self.name = name
         self.attrs[ID_ATTR] = name
 
-    def union(self, other: SpliceGraph, **args: object) -> SpliceGraph:
+    def union(
+        self,
+        other: SpliceGraph,
+        *,
+        keepName: bool = False,
+        mergeEnds: bool = False,
+        idGenerator: Iterator[str] | None = None,
+    ) -> SpliceGraph:
         """Merges two graphs into one.  Adds nodes that are distinct and merges nodes
         that have the same start/end positions.  Merged nodes will share AS
         information.  New attributes may be added, but conflicts will be resolved
         in favor of the existing graph."""
-        keepName = getAttribute("keepName", False, **args)
-        mergeEnds = getAttribute("mergeEnds", False, **args)
-        idgen = getAttribute("idGenerator", idFactory("%s_U" % self.getName()), **args)
+        idgen = (
+            idGenerator
+            if idGenerator is not None
+            else idFactory("%s_U" % self.getName())
+        )
 
         # establish correct strand
         self_strand = coerce_enum(self.strand, Strand, field="strand")
@@ -1666,7 +1715,8 @@ class SpliceGraph(object):
                 )
             else:
                 sys.stderr.write(
-                    '** Warning: splice graph for %s is invalid:\n"%s"\n' % (self.getName(), reason)
+                    '** Warning: splice graph for %s is invalid:\n"%s"\n'
+                    % (self.getName(), reason)
                 )
 
         roots = set(self.getRoots())
@@ -1690,10 +1740,10 @@ class SpliceGraphParser(object):
     """Class that parses a GFF file filled with splice graphs and provides an
     iterator over each graph in the file."""
 
-    def __init__(self, fileRef: str | TextIO, **args: object) -> None:
+    def __init__(self, fileRef: str | TextIO, *, verbose: bool = False) -> None:
         """Parses a GFF file filled with splice graphs and returns each graph in an iterator.
         The file may be given either as an input stream or as a file path."""
-        self.verbose = getAttribute("verbose", False, **args)
+        self.verbose = verbose
 
         if isinstance(fileRef, str):
             self.instream = ez_open(fileRef)
@@ -1744,21 +1794,26 @@ class SpliceGraphParser(object):
                 parts = s.split("\t")
 
                 try:
-                    recType = coerce_enum(parts[2].lower(), RecordType, field="record_type").value
+                    recType = coerce_enum(
+                        parts[2].lower(), RecordType, field="record_type"
+                    ).value
                     start = int(parts[3])
                     end = int(parts[4])
                 except IndexError:
                     raise ValueError(
-                        "Illegal record in splice graph file at line %d:\n\t%s" % (lineNo, s)
+                        "Illegal record in splice graph file at line %d:\n\t%s"
+                        % (lineNo, s)
                     )
                 except ValueError:
                     raise ValueError(
-                        "Illegal record type in splice graph file at line %d:\n\t%s" % (lineNo, s)
+                        "Illegal record type in splice graph file at line %d:\n\t%s"
+                        % (lineNo, s)
                     )
 
                 if recType not in VALID_RECTYPES:
                     raise ValueError(
-                        "Illegal record type in splice graph file at line %d:\n\t%s" % (lineNo, s)
+                        "Illegal record type in splice graph file at line %d:\n\t%s"
+                        % (lineNo, s)
                     )
 
                 attrs = self._parse_attributes(parts[-1], lineNo)
@@ -1767,7 +1822,8 @@ class SpliceGraphParser(object):
                     node_id = attrs[ID_ATTR]
                 except KeyError:
                     raise ValueError(
-                        "GFF attribute field '%s' has no ID at line %d" % (parts[-1], lineNo)
+                        "GFF attribute field '%s' has no ID at line %d"
+                        % (parts[-1], lineNo)
                     )
 
                 if recType in VALID_GENES:
@@ -1776,7 +1832,9 @@ class SpliceGraphParser(object):
                         for parent_id, child_id in edges:
                             graph.addEdge(alias[parent_id], alias[child_id])
                     # Start new graph
-                    graph = SpliceGraph(name=node_id, chromosome=parts[0], strand=parts[6])
+                    graph = SpliceGraph(
+                        name=node_id, chromosome=parts[0], strand=parts[6]
+                    )
                     graph.minpos = min(start, end)
                     graph.maxpos = max(start, end)
                     for k in attrs:
@@ -1786,7 +1844,9 @@ class SpliceGraphParser(object):
                     edges = set()
                     alias = {}
                 elif graph is None:
-                    raise ValueError("Graph feature found before graph header at line %d" % lineNo)
+                    raise ValueError(
+                        "Graph feature found before graph header at line %d" % lineNo
+                    )
                 else:
                     node = graph.addNode(node_id, start, end)
                     alias[node_id] = node.id
@@ -1825,7 +1885,8 @@ class SpliceGraphParser(object):
             key, sep, value = pair.partition("=")
             if not sep or not key:
                 raise ValueError(
-                    "Illegal attribute field '%s' at line %d in GFF file." % (field, line_no)
+                    "Illegal attribute field '%s' at line %d in GFF file."
+                    % (field, line_no)
                 )
             attrs[key] = value
         return attrs

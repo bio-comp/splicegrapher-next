@@ -24,7 +24,6 @@ from SpliceGrapher.formats.writers.gene_model import (
 from SpliceGrapher.formats.writers.gene_model import (
     write_gtf as write_gene_model_gtf,
 )
-from SpliceGrapher.shared.process_utils import getAttribute
 from SpliceGrapher.shared.progress import ProgressIndicator
 
 KNOWN_RECTYPES = [
@@ -515,7 +514,7 @@ class Isoform(BaseFeature):
         return result
 
     def gtfStrings(self) -> list[str]:
-        result = []
+        result: list[str] = []
         # Always sort in ascending order by position
         exonList = sorted(self.exons, key=featureSortKey)
         for i in range(len(exonList)):
@@ -787,15 +786,14 @@ class mRNA(Isoform):
         self.cds.sort(key=featureSortKey, reverse=(self.strand == "-"))
         return self.cds
 
-    def sortedExons(self, **args):
+    def sortedExons(self, *, minintron: int = 2) -> list[Exon]:
         """
         Infers an exon list from a CDS list and sorts the list based on strand.  Usually
         this means a 5' UTR record abuts a CDS record or a CDS record abuts a 3' UTR record,
         in which case an expanded exon represents both.
         """
-        minintron = getAttribute("minintron", 2, **args)
         cdsList = self.sortedCDS()
-        result = []
+        result: list[Exon] = []
         for i in range(len(cdsList)):
             cds = cdsList[i]
             if len(result) > 0 and abs(cds.start() - result[-1].end()) < minintron:
