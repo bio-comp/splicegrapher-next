@@ -2,7 +2,10 @@
 Module that encapsulates a splice graph.
 """
 
+from __future__ import annotations
+
 import sys
+from typing import TextIO
 
 from SpliceGrapher.core.enum_coercion import coerce_enum
 from SpliceGrapher.core.enums import AttrKey, EdgeType, NodeDisposition, RecordType, Strand
@@ -691,7 +694,16 @@ class NullNode(object):
 class SpliceGraphNode(object):
     """This is the node class to use for constructing splice graphs for GFF input/output."""
 
-    def __init__(self, id, start, end, strand, chrom, parents=[], children=[]):
+    def __init__(
+        self,
+        id: str,
+        start: int,
+        end: int,
+        strand: str | Strand,
+        chrom: str,
+        parents: list[SpliceGraphNode] | None = None,
+        children: list[SpliceGraphNode] | None = None,
+    ) -> None:
         self.id = id
         self.strand = coerce_enum(strand, Strand, field="strand").value
         self.chromosome = chrom
@@ -700,11 +712,11 @@ class SpliceGraphNode(object):
         (self.start, self.end) = (
             (self.minpos, self.maxpos) if strand == "+" else (self.maxpos, self.minpos)
         )
-        self.parents = list(parents)
-        self.children = list(children)
-        self.attrs = {}
-        self.altFormSet = set()
-        self.isoformSet = set()
+        self.parents: list[SpliceGraphNode] = list(parents) if parents is not None else []
+        self.children: list[SpliceGraphNode] = list(children) if children is not None else []
+        self.attrs: dict[str, object] = {}
+        self.altFormSet: set[str] = set()
+        self.isoformSet: set[str] = set()
         # Added for adjustable ranges
         self.origStart = self.start
         self.origEnd = self.end
@@ -1510,7 +1522,7 @@ class SpliceGraph(object):
         self.name = name
         self.attrs[ID_ATTR] = name
 
-    def union(self, other, **args):
+    def union(self, other: SpliceGraph, **args: object) -> SpliceGraph:
         """Merges two graphs into one.  Adds nodes that are distinct and merges nodes
         that have the same start/end positions.  Merged nodes will share AS
         information.  New attributes may be added, but conflicts will be resolved
@@ -1525,7 +1537,7 @@ class SpliceGraph(object):
         strand = self_strand
         if self_strand.value in VALID_STRANDS:
             if other_strand.value in VALID_STRANDS and self_strand != other_strand:
-                raise AttributeError("Cannot merge graphs with conflicting strands.\n")
+                raise ValueError("Cannot merge graphs with conflicting strands.")
         elif other_strand.value in VALID_STRANDS:
             strand = other_strand
 
@@ -1678,7 +1690,7 @@ class SpliceGraphParser(object):
     """Class that parses a GFF file filled with splice graphs and provides an
     iterator over each graph in the file."""
 
-    def __init__(self, fileRef, **args):
+    def __init__(self, fileRef: str | TextIO, **args: object) -> None:
         """Parses a GFF file filled with splice graphs and returns each graph in an iterator.
         The file may be given either as an input stream or as a file path."""
         self.verbose = getAttribute("verbose", False, **args)
@@ -1691,117 +1703,129 @@ class SpliceGraphParser(object):
         if self.instream is None:
             raise ValueError("No input file stream given.")
 
-        self.graphDict = {}
+        self.graphDict: dict[str, SpliceGraph] = {}
+        self._graph_keys: list[str] = []
         self.loadFromFile()
 
-    def __iter__(self):
+    def __iter__(self) -> SpliceGraphParser:
         """Iterator implementation."""
         return self
 
-    def __next__(self):
+    def __next__(self) -> SpliceGraph:
         """Iterator implementation."""
-        try:
-            key = list(self.graphDict.keys())[self.graphId]
-            self.graphId += 1
-            return self.graphDict[key]
-        except Exception:
+        if self.graphId >= len(self._graph_keys):
             raise StopIteration
+        key = self._graph_keys[self.graphId]
+        self.graphId += 1
+        return self.graphDict[key]
 
     # Python 2 compatibility alias
     next = __next__
 
-    def __len__(self):
+    def __len__(self) -> int:
         """Returns the number of nodes in the graph."""
         return len(self.graphDict)
 
-    def loadFromFile(self):
+    def loadFromFile(self) -> None:
         """Loads all graphs stored in a GFF file."""
         lineNo = 0
-        graph = None
+        graph: SpliceGraph | None = None
         # aliases keep track of nodes with different ids but identical start/end positions
-        alias = {}
-        edges = set([])
+        alias: dict[str, str] = {}
+        edges: set[tuple[str, str]] = set()
         indicator = ProgressIndicator(100000, verbose=self.verbose)
-        for line in self.instream:
-            indicator.update()
-            lineNo += 1
-            if line.startswith("#"):
-                continue
-            s = line.strip()
-            parts = s.split("\t")
+        try:
+            for line in self.instream:
+                indicator.update()
+                lineNo += 1
+                if line.startswith("#"):
+                    continue
+                s = line.strip()
+                parts = s.split("\t")
 
-            try:
-                recType = coerce_enum(parts[2].lower(), RecordType, field="record_type").value
-                start = int(parts[3])
-                end = int(parts[4])
-            except IndexError:
-                raise ValueError(
-                    "Illegal record in splice graph file at line %d:\n\t%s" % (lineNo, s)
-                )
-            except ValueError:
-                raise ValueError(
-                    "Illegal record type in splice graph file at line %d:\n\t%s" % (lineNo, s)
-                )
+                try:
+                    recType = coerce_enum(parts[2].lower(), RecordType, field="record_type").value
+                    start = int(parts[3])
+                    end = int(parts[4])
+                except IndexError:
+                    raise ValueError(
+                        "Illegal record in splice graph file at line %d:\n\t%s" % (lineNo, s)
+                    )
+                except ValueError:
+                    raise ValueError(
+                        "Illegal record type in splice graph file at line %d:\n\t%s" % (lineNo, s)
+                    )
 
-            if recType not in VALID_RECTYPES:
-                raise ValueError(
-                    "Illegal record type in splice graph file at line %d:\n\t%s" % (lineNo, s)
-                )
+                if recType not in VALID_RECTYPES:
+                    raise ValueError(
+                        "Illegal record type in splice graph file at line %d:\n\t%s" % (lineNo, s)
+                    )
 
-            try:
-                # Convert 'ID=ABC;Parent=X,Y,Z' into {'ID':'ABC', 'Parent':'X,Y,Z'}
-                attrs = dict([tuple(p.split("=")) for p in parts[-1].split(";") if p])
-            except Exception:
-                raise ValueError(
-                    "Illegal attribute field '%s' at line %d in GFF file." % (parts[-1], lineNo)
-                )
+                attrs = self._parse_attributes(parts[-1], lineNo)
 
-            try:
-                id = attrs["ID"]
-            except KeyError:
-                raise ValueError(
-                    "GFF attribute field '%s' has no ID at line %d" % (parts[-1], lineNo)
-                )
+                try:
+                    node_id = attrs[ID_ATTR]
+                except KeyError:
+                    raise ValueError(
+                        "GFF attribute field '%s' has no ID at line %d" % (parts[-1], lineNo)
+                    )
 
-            if recType in VALID_GENES:
-                # Add edges to previous graph
-                if graph is not None:
-                    for e in edges:
-                        graph.addEdge(alias[e[0]], alias[e[1]])
-                # Start new graph
-                graph = SpliceGraph(name=id, chromosome=parts[0], strand=parts[6])
-                graph.minpos = min(start, end)
-                graph.maxpos = max(start, end)
-                for k in attrs:
-                    if k not in KNOWN_ATTRS:
-                        graph.attrs[k] = attrs[k]
-                self.graphDict[id] = graph
-                edges = set([])
-                alias = {}
-            elif graph is None:
-                raise ValueError("Graph feature found before graph header at line %d" % lineNo)
-            else:
-                node = graph.addNode(id, start, end)
-                alias[id] = node.id
-                for k in attrs:
-                    if k == AS_KEY:
-                        node.addFormsFromString(attrs[k])
-                    elif k == ISO_KEY and attrs[k]:
-                        node.addIsoformString(attrs[k])
-                    elif k in [START_CODON_KEY, END_CODON_KEY] and attrs[k]:
-                        node.attrs[k] = set([int(x) for x in attrs[k].split(",")])
-                    elif k not in KNOWN_ATTRS:
-                        node.addAttribute(k, attrs[k])
+                if recType in VALID_GENES:
+                    # Add edges to previous graph
+                    if graph is not None:
+                        for parent_id, child_id in edges:
+                            graph.addEdge(alias[parent_id], alias[child_id])
+                    # Start new graph
+                    graph = SpliceGraph(name=node_id, chromosome=parts[0], strand=parts[6])
+                    graph.minpos = min(start, end)
+                    graph.maxpos = max(start, end)
+                    for k in attrs:
+                        if k not in KNOWN_ATTRS:
+                            graph.attrs[k] = attrs[k]
+                    self.graphDict[node_id] = graph
+                    edges = set()
+                    alias = {}
+                elif graph is None:
+                    raise ValueError("Graph feature found before graph header at line %d" % lineNo)
+                else:
+                    node = graph.addNode(node_id, start, end)
+                    alias[node_id] = node.id
+                    for k in attrs:
+                        if k == AS_KEY:
+                            node.addFormsFromString(attrs[k])
+                        elif k == ISO_KEY and attrs[k]:
+                            node.addIsoformString(attrs[k])
+                        elif k in [START_CODON_KEY, END_CODON_KEY] and attrs[k]:
+                            node.attrs[k] = set([int(x) for x in attrs[k].split(",")])
+                        elif k not in KNOWN_ATTRS:
+                            node.addAttribute(k, attrs[k])
 
-                if PARENT_ATTR in attrs:
-                    parents = attrs[PARENT_ATTR].split(",")
-                    for p in parents:
-                        edges.add((p, id))
+                    if PARENT_ATTR in attrs:
+                        parents = attrs[PARENT_ATTR].split(",")
+                        for parent in parents:
+                            edges.add((parent, node_id))
 
-        if graph is not None:
-            for e in edges:
-                graph.addEdge(alias[e[0]], alias[e[1]])
+            if graph is not None:
+                for parent_id, child_id in edges:
+                    graph.addEdge(alias[parent_id], alias[child_id])
+        finally:
+            indicator.finish()
 
-        indicator.finish()
         # Initialize iterator counter
         self.graphId = 0
+        self._graph_keys = list(self.graphDict.keys())
+
+    @staticmethod
+    def _parse_attributes(field: str, line_no: int) -> dict[str, str]:
+        """Convert `a=b;c=d` into key/value pairs while preserving '=' in values."""
+        attrs: dict[str, str] = {}
+        for pair in field.split(";"):
+            if not pair:
+                continue
+            key, sep, value = pair.partition("=")
+            if not sep or not key:
+                raise ValueError(
+                    "Illegal attribute field '%s' at line %d in GFF file." % (field, line_no)
+                )
+            attrs[key] = value
+        return attrs
