@@ -9,7 +9,6 @@ from pathlib import Path, PurePosixPath
 
 BASELINE_PER_FILE_IGNORES: dict[str, set[str]] = {
     "SpliceGrapher/formats/fasta.py": {"E", "F", "W"},
-    "SpliceGrapher/shared/ShortRead.py": {"E", "F", "W"},
 }
 
 # Real script entry points can be added here explicitly as needed.
