@@ -7,7 +7,8 @@ from __future__ import annotations
 
 # TRYING A NEW WAY TO IDENTIFY GENES:
 import os
-from collections.abc import Callable, Iterable, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
+from dataclasses import dataclass
 from typing import Protocol, TextIO, TypeVar
 from urllib.parse import unquote
 
@@ -108,6 +109,9 @@ GTF_ORDER_POLICY = "genomic_ascending"
 
 GeneFilter = Callable[["Gene"], bool]
 GffRecordSource = str | list[str] | set[str] | tuple[str, ...]
+AttrValue = str
+AttrMap = Mapping[str, AttrValue]
+ExtraAttrMap = Mapping[str, AttrValue] | Mapping[AttrKey, AttrValue]
 AttrT = TypeVar("AttrT")
 GeneLikeT = TypeVar("GeneLikeT", bound="GeneLike")
 
@@ -120,6 +124,14 @@ class GeneLike(Protocol):
     def contains(self, pos: int, strand: str) -> bool: ...
 
 
+@dataclass(slots=True)
+class IntervalQuery:
+    """Simple interval wrapper for index overlap queries."""
+
+    minpos: int
+    maxpos: int
+
+
 def gene_type_filter(g: Gene) -> bool:
     """Convenience filter for getting only 'gene' records."""
     return g.featureType == RecordType.GENE
@@ -130,14 +142,14 @@ def defaultGeneFilter(g: Gene) -> bool:
     return True
 
 
-def dict_to_gff(d: dict[str, object]) -> str:
+def dict_to_gff(d: Mapping[str, str]) -> str:
     """Returns a string representation of a dictionary based on the GFF3 annotation format."""
-    return ";".join(["{}={}".format(k, v) for k, v in sorted(d.items()) if k != "parent"])
+    return ";".join([f"{k}={v}" for k, v in sorted(d.items()) if k != "parent"])
 
 
-def dict_to_gtf(d: dict[str, object]) -> str:
+def dict_to_gtf(d: Mapping[str, str]) -> str:
     """Returns a string representation of a dictionary based on the GTF annotation format."""
-    return "; ".join(['{} "{}"'.format(k, v) for k, v in sorted(d.items()) if k != "parent"])
+    return "; ".join([f'{k} "{v}"' for k, v in sorted(d.items()) if k != "parent"])
 
 
 def cdsFactory(
@@ -146,10 +158,10 @@ def cdsFactory(
     endPos: int,
     chrName: str,
     strand: str,
-    attr: dict[str, str] | None = None,
+    attr: AttrMap | None = None,
 ) -> CDS:
     """Simple factory method for creating CDS-type records."""
-    attr = {} if attr is None else attr
+    attr = {} if attr is None else {str(key): str(value) for key, value in attr.items()}
     if recType == RecordType.CDS:
         return CDS(startPos, endPos, chrName, strand, attr)
     elif recType == RecordType.FIVE_PRIME_UTR:
@@ -157,7 +169,7 @@ def cdsFactory(
     elif recType == RecordType.THREE_PRIME_UTR:
         return TP_UTR(startPos, endPos, chrName, strand, attr)
     else:
-        raise ValueError("Illegal CDS record type: {}".format(recType))
+        raise ValueError(f"Illegal CDS record type: {recType}")
 
 
 class Chromosome:
@@ -197,9 +209,7 @@ class Chromosome:
         so we must infer chromosome boundaries from observed features.
         """
         if feature.chromosome.lower() != self.name.lower():
-            raise ValueError(
-                "Cannot use feature from {} to update {}".format(feature.chromosome, self.name)
-            )
+            raise ValueError(f"Cannot use feature from {feature.chromosome} to update {self.name}")
         self.minpos = min(self.minpos, feature.minpos)
         self.maxpos = max(self.maxpos, feature.maxpos)
 
@@ -284,16 +294,26 @@ def feature_search(
 
 
 class BaseFeature:
-    def __init__(self, featureType, start, end, chromosome, strand, attr=None):
-        self.chromosome = chromosome
-        self.strand = strand
-        self.parent = None
+    def __init__(
+        self,
+        featureType: str | RecordType,
+        start: int,
+        end: int,
+        chromosome: str,
+        strand: str,
+        attr: AttrMap | None = None,
+    ) -> None:
+        self.chromosome: str = chromosome
+        self.strand: str = strand
+        self.parent: str | Gene | None = None
         self.minpos = min(start, end)
         self.maxpos = max(start, end)
-        self.featureType = featureType
-        self.attributes = {} if attr is None else attr
+        self.featureType: str | RecordType = featureType
+        self.attributes: dict[str, str] = (
+            {} if attr is None else {str(key): str(value) for key, value in attr.items()}
+        )
 
-    def acceptor(self):
+    def acceptor(self) -> int:
         """
         Returns the location where the acceptor dimer begins.
 
@@ -305,25 +325,23 @@ class BaseFeature:
         """
         return self.start() - SPLICE_DIMER_OFFSET if self.strand == "+" else self.start()
 
-    def __lt__(self, other: object) -> bool:
-        if not isinstance(other, BaseFeature):
-            return NotImplemented
+    def __lt__(self, other: BaseFeature) -> bool:
         return (self.chromosome, self.minpos, self.maxpos) < (
             other.chromosome,
             other.minpos,
             other.maxpos,
         )
 
-    def contains(self, pos, strand):
+    def contains(self, pos: int, strand: str) -> bool:
         return strand == self.strand and self.minpos <= pos <= self.maxpos
 
-    def detailString(self):
+    def detailString(self) -> str:
         return (
             f"Feature: {self.featureType}\nChromosome: {self.chromosome}\n"
             f"Start: {self.start()}; End: {self.end()}; Strand: '{self.strand}'"
         )
 
-    def donor(self):
+    def donor(self) -> int:
         """
         Returns the location where the donor dimer begins.
 
@@ -335,10 +353,10 @@ class BaseFeature:
         """
         return self.end() if self.strand == "+" else self.end() - SPLICE_DIMER_OFFSET
 
-    def end(self):
+    def end(self) -> int:
         return self.maxpos if self.strand == "+" else self.minpos
 
-    def __eq__(self, other):
+    def __eq__(self, other) -> bool:
         return (
             self.minpos == other.minpos
             and self.maxpos == other.maxpos
@@ -346,65 +364,62 @@ class BaseFeature:
             and self.chromosome == other.chromosome
         )
 
-    def gffString(self, altAttributes=None):
+    def gffString(self, altAttributes: ExtraAttrMap | None = None) -> str:
         """Returns a GFF-formatted representation of the feature."""
         attrs = dict(self.attributes)
         if altAttributes is not None:
-            attrs.update(altAttributes)
+            attrs.update({str(k): str(v) for k, v in altAttributes.items()})
 
-        return "{}\t{}\t{}\t{}\t{}\t.\t{}\t.\t{}".format(
-            self.chromosome.capitalize(),
-            GFF_ID,
-            self.featureType,
-            self.minpos,
-            self.maxpos,
-            self.strand,
-            dict_to_gff(attrs),
+        return (
+            f"{self.chromosome.capitalize()}\t{GFF_ID}\t{self.featureType}\t"
+            f"{self.minpos}\t{self.maxpos}\t.\t{self.strand}\t.\t{dict_to_gff(attrs)}"
         )
 
-    def gtfString(self, transcript, genePtr, exonId):
+    def gtfString(self, transcript: str, genePtr: Gene, exonId: int) -> str:
         """Returns a GTF-formatted representation of the feature."""
-        attrs = dict([(k.lower(), self.attributes[k]) for k in self.attributes])
+        attrs = {str(k).lower(): str(v) for k, v in self.attributes.items()}
         attrs[GTF_GENE_ID] = genePtr.id
         attrs[GTF_GENE_NAME] = genePtr.name
         attrs[GTF_TRANSCRIPT] = transcript
-        attrs[GTF_EXON_ID] = exonId
+        attrs[GTF_EXON_ID] = str(exonId)
         try:
             source = attrs[GTF_SOURCE]
         except KeyError:
             source = GFF_ID
-        return "{}\t{}\t{}\t{}\t{}\t.\t{}\t.\t{}".format(
-            self.chromosome.capitalize(),
-            source,
-            self.featureType,
-            self.minpos,
-            self.maxpos,
-            self.strand,
-            dict_to_gtf(attrs),
+        return (
+            f"{self.chromosome.capitalize()}\t{source}\t{self.featureType}\t"
+            f"{self.minpos}\t{self.maxpos}\t.\t{self.strand}\t.\t{dict_to_gtf(attrs)}"
         )
 
-    def __hash__(self):
+    def __hash__(self) -> int:
         return hash((self.minpos, self.maxpos, self.strand, self.chromosome))
 
-    def __len__(self):
+    def __len__(self) -> int:
         return self.maxpos - self.minpos + 1
 
-    def setParent(self, id):
+    def setParent(self, id: str | Gene) -> None:
         self.parent = id
 
-    def start(self):
+    def start(self) -> int:
         return self.minpos if self.strand == "+" else self.maxpos
 
-    def __str__(self):
+    def __str__(self) -> str:
         return f"{self.chromosome} {self.featureType}: {self.start()}-{self.end()} ({self.strand})"
 
 
 class Exon(BaseFeature):
-    def __init__(self, start, end, chromosome, strand, attr=None):
+    def __init__(
+        self,
+        start: int,
+        end: int,
+        chromosome: str,
+        strand: str,
+        attr: AttrMap | None = None,
+    ):
         BaseFeature.__init__(self, RecordType.EXON, start, end, chromosome, strand, attr)
-        self.parents = []
+        self.parents: list[Isoform | mRNA] = []
 
-    def __str__(self):
+    def __str__(self) -> str:
         if self.parents:
             return (
                 f"{self.featureType} {self.start()}-{self.end()}({self.strand}) "
@@ -413,23 +428,31 @@ class Exon(BaseFeature):
         else:
             return f"{self.featureType} {self.start()}-{self.end()}({self.strand})"
 
-    def addParent(self, isoform):
+    def addParent(self, isoform: Isoform | mRNA) -> None:
         if isoform not in self.parents:
             self.parents.append(isoform)
 
 
 class Isoform(BaseFeature):
-    def __init__(self, id, start, end, chromosome, strand, attr=None):
+    def __init__(
+        self,
+        id: str,
+        start: int,
+        end: int,
+        chromosome: str,
+        strand: str,
+        attr: AttrMap | None = None,
+    ) -> None:
         BaseFeature.__init__(self, ISOFORM_TYPE, start, end, chromosome, strand, attr)
-        self.id = id
-        self.features = []
-        self.exons = []
-        self.exonMap = {}
+        self.id: str = id
+        self.features: list[BaseFeature] = []
+        self.exons: list[Exon] = []
+        self.exonMap: dict[tuple[int, int], Exon] = {}
 
-    def __eq__(self, other):
+    def __eq__(self, other) -> bool:
         return self.featureType == other.featureType and self.id == other.id
 
-    def acceptorList(self):
+    def acceptorList(self) -> list[int]:
         """
         Returns a list of acceptor positions for the isoform.
         """
@@ -485,23 +508,23 @@ class Isoform(BaseFeature):
     def addFeature(self, feature: BaseFeature) -> None:
         self.add_feature(feature)
 
-    def detailString(self):
+    def detailString(self) -> str:
         return (
             f"Isoform {self.id}\nStart: {self.start()}; End: {self.end()}; "
             f"Strand: {self.strand}\nExons: [{self.exonString()}]\n"
         )
 
-    def donorList(self):
+    def donorList(self) -> list[int]:
         """
         Returns a list of donor positions for the isoform.
         """
         self.exons.sort(key=featureSortKey, reverse=(self.strand == "-"))
         return [e.donor() for e in self.exons[:-1]]
 
-    def exonString(self):
+    def exonString(self) -> str:
         return ",".join([str(e) for e in self.exons])
 
-    def get_feature_list(self, featureType):
+    def get_feature_list(self, featureType: str | RecordType) -> list[BaseFeature]:
         return [f for f in self.features if f.featureType == featureType]
 
     def gffStrings(self) -> list[str]:
@@ -523,6 +546,8 @@ class Isoform(BaseFeature):
 
     def gtfStrings(self) -> list[str]:
         result: list[str] = []
+        if not isinstance(self.parent, Gene):
+            raise RuntimeError("Isoform parent gene is required before writing GTF")
         # Compatibility policy: GTF remains genomic-ascending on both strands.
         exonList = sorted(self.exons, key=gtf_feature_sort_key)
         for i in range(len(exonList)):
@@ -530,7 +555,7 @@ class Isoform(BaseFeature):
             result.append(exon.gtfString(self.id, self.parent, i + 1))
         return result
 
-    def sortedExons(self):
+    def sortedExons(self) -> list[Exon]:
         """
         Sorts the exons in an isoform based on its strand and
         returns the sorted list of exon objects.
@@ -538,7 +563,7 @@ class Isoform(BaseFeature):
         self.exons.sort(key=featureSortKey, reverse=(self.strand == "-"))
         return self.exons
 
-    def sortedIntrons(self):
+    def sortedIntrons(self) -> list[tuple[int, int]]:
         """
         Returns a list of intron (donor,acceptor) tuples sorted based on strand.
         """
@@ -550,7 +575,7 @@ class Isoform(BaseFeature):
             prev = e
         return result
 
-    def __str__(self):
+    def __str__(self) -> str:
         return (
             f"{self.id} ({self.chromosome}): {self.start()}-{self.end()} "
             f"(len={len(self)}, strand={self.strand}), {len(self.exons)} exons/cds, "
@@ -560,14 +585,19 @@ class Isoform(BaseFeature):
 
 # Just as exons are part of an isoform, so CDS elements are part of an mRNA sequence:
 class CDS(Exon):
-    def __init__(self, start, end, chromosome, strand, attr=None):
+    def __init__(
+        self,
+        start: int,
+        end: int,
+        chromosome: str,
+        strand: str,
+        attr: AttrMap | None = None,
+    ) -> None:
         BaseFeature.__init__(self, RecordType.CDS, start, end, chromosome, strand, attr)
-        self.parents = []
+        self.parents: list[Isoform | mRNA] = []
 
-    def __lt__(self, other: object) -> bool:
+    def __lt__(self, other: BaseFeature) -> bool:
         """Compare CDS records, including feature type for tied intervals."""
-        if not isinstance(other, BaseFeature):
-            return NotImplemented
         return (self.chromosome, self.minpos, self.maxpos, self.featureType) < (
             other.chromosome,
             other.minpos,
@@ -575,7 +605,7 @@ class CDS(Exon):
             other.featureType,
         )
 
-    def __eq__(self, o):
+    def __eq__(self, o) -> bool:
         """Compare CDS equality by type and genomic location."""
         return (
             self.featureType == o.featureType
@@ -585,7 +615,7 @@ class CDS(Exon):
             and self.chromosome == o.chromosome
         )
 
-    def __str__(self):
+    def __str__(self) -> str:
         return (
             f"{self.featureType} {self.start()}-{self.end()} "
             f"(isoforms: {','.join([x.id for x in self.parents])})"
@@ -594,15 +624,29 @@ class CDS(Exon):
 
 # We treat UTR records the same way as CDS records
 class FP_UTR(CDS):
-    def __init__(self, start, end, chromosome, strand, attr=None):
+    def __init__(
+        self,
+        start: int,
+        end: int,
+        chromosome: str,
+        strand: str,
+        attr: AttrMap | None = None,
+    ) -> None:
         BaseFeature.__init__(self, RecordType.FIVE_PRIME_UTR, start, end, chromosome, strand, attr)
-        self.parents = []
+        self.parents: list[Isoform | mRNA] = []
 
 
 class TP_UTR(CDS):
-    def __init__(self, start, end, chromosome, strand, attr=None):
+    def __init__(
+        self,
+        start: int,
+        end: int,
+        chromosome: str,
+        strand: str,
+        attr: AttrMap | None = None,
+    ) -> None:
         BaseFeature.__init__(self, RecordType.THREE_PRIME_UTR, start, end, chromosome, strand, attr)
-        self.parents = []
+        self.parents: list[Isoform | mRNA] = []
 
 
 class mRNA(Isoform):
@@ -611,17 +655,25 @@ class mRNA(Isoform):
     and contains a number of coding sequences (CDS).
     """
 
-    def __init__(self, id, start, end, chromosome, strand, attr=None):
+    def __init__(
+        self,
+        id: str,
+        start: int,
+        end: int,
+        chromosome: str,
+        strand: str,
+        attr: AttrMap | None = None,
+    ) -> None:
         BaseFeature.__init__(self, RecordType.MRNA, start, end, chromosome, strand, attr)
-        self.id = id
-        self.exons = []
-        self.features = []
-        self.cds = []
-        self.cdsMap = {}
-        self.start_codon = None
-        self.end_codon = None
+        self.id: str = id
+        self.exons: list[Exon] = []
+        self.features: list[BaseFeature] = []
+        self.cds: list[CDS] = []
+        self.cdsMap: dict[tuple[int, int], CDS] = {}
+        self.start_codon: tuple[int, int] | None = None
+        self.end_codon: tuple[int, int] | None = None
 
-    def acceptorList(self):
+    def acceptorList(self) -> list[int]:
         """Returns a list of acceptor positions for the mRNA."""
         self.cds.sort(key=featureSortKey, reverse=(self.strand == "-"))
         return [c.acceptor() for c in self.cds[1:]]
@@ -651,12 +703,12 @@ class mRNA(Isoform):
         self.cds.append(cds)
         return True
 
-    def donorList(self):
+    def donorList(self) -> list[int]:
         """Returns a list of donor positions for the mRNA."""
         self.cds.sort(key=featureSortKey, reverse=(self.strand == "-"))
         return [c.donor() for c in self.cds[:-1]]
 
-    def endCodon(self):
+    def endCodon(self) -> tuple[int, int] | None:
         """Returns the end codon for this splice form as a duple of (start,end)
         positions, or None if there are none found.  Positions are relative to
         the start of the chromosome (1-based)."""
@@ -664,7 +716,7 @@ class mRNA(Isoform):
             self.findCodons()
         return self.end_codon
 
-    def findCodons(self):
+    def findCodons(self) -> None:
         """Infers a transcript's start and end codon positions based on
         the relative positions of UTR and CDS records."""
         if self.end_codon and self.start_codon:
@@ -694,7 +746,7 @@ class mRNA(Isoform):
                 )
             prev = c
 
-    def inferCodons(self):
+    def inferCodons(self) -> None:
         """This method will infer start and end codons even when there are no
         UTR records for a transcript.  It is best to use this only after all
         data have been loaded for a gene."""
@@ -719,7 +771,7 @@ class mRNA(Isoform):
                 (c.maxpos - 2, c.maxpos) if self.strand == "+" else (c.minpos, c.minpos + 2)
             )
 
-    def getUTRs(self):
+    def getUTRs(self) -> list[CDS]:
         """Returns a list of all UTR records in the mRNA object."""
         return [
             c
@@ -727,7 +779,7 @@ class mRNA(Isoform):
             if c.featureType in [RecordType.FIVE_PRIME_UTR, RecordType.THREE_PRIME_UTR]
         ]
 
-    def gffStrings(self):
+    def gffStrings(self) -> list[str]:
         result = [self.gffString()]
         gffAttr = {PARENT_FIELD: self.id}
         gtfAttr = {
@@ -745,7 +797,7 @@ class mRNA(Isoform):
 
     def gtfStartCodon(self) -> str | None:
         if self.start_codon:
-            if self.parent is None:
+            if not isinstance(self.parent, Gene):
                 raise RuntimeError("mRNA parent gene is required before writing start_codon")
             return (
                 f"{self.chromosome}\t{GFF_ID}\tstart_codon\t{self.start_codon[0]}"
@@ -756,7 +808,7 @@ class mRNA(Isoform):
 
     def gtfStopCodon(self) -> str | None:
         if self.end_codon:
-            if self.parent is None:
+            if not isinstance(self.parent, Gene):
                 raise RuntimeError("mRNA parent gene is required before writing stop_codon")
             return (
                 f"{self.chromosome}\t{GFF_ID}\tstop_codon\t{self.end_codon[0]}"
@@ -774,6 +826,8 @@ class mRNA(Isoform):
         codonString = self.gtfStartCodon() if self.strand == "+" else self.gtfStopCodon()
         if codonString:
             result.append(codonString)
+        if not isinstance(self.parent, Gene):
+            raise RuntimeError("mRNA parent gene is required before writing GTF")
 
         # Compatibility policy: GTF remains genomic-ascending on both strands.
         cdsList = sorted(self.cds, key=gtf_feature_sort_key)
@@ -787,7 +841,7 @@ class mRNA(Isoform):
 
         return result
 
-    def sortedCDS(self):
+    def sortedCDS(self) -> list[CDS]:
         """
         Sorts the CDS in an mRNA based on its strand and returns the sorted list of CDS objects.
         """
@@ -814,7 +868,7 @@ class mRNA(Isoform):
             e.featureType = RecordType.CDS
         return result
 
-    def startCodon(self):
+    def startCodon(self) -> tuple[int, int] | None:
         """Returns the start codon for this splice form as a duple of (start,end)
         positions, or None if there are none found.  Positions are relative to
         the start of the chromosome (1-based)."""
@@ -822,7 +876,7 @@ class mRNA(Isoform):
             self.findCodons()
         return self.start_codon
 
-    def __str__(self):
+    def __str__(self) -> str:
         return (
             f"{self.id} ({self.chromosome}): {self.start()}-{self.end()} "
             f"(len={len(self)}, strand={self.strand}), {len(self.cds)} exons/cds, "
@@ -831,27 +885,37 @@ class mRNA(Isoform):
 
 
 class Gene(BaseFeature):
-    def __init__(self, id, note, start, end, chromosome, strand, name=None, attr=None):
+    def __init__(
+        self,
+        id: str,
+        note: str | None,
+        start: int,
+        end: int,
+        chromosome: str,
+        strand: str,
+        name: str | None = None,
+        attr: AttrMap | None = None,
+    ) -> None:
         BaseFeature.__init__(self, RecordType.GENE, start, end, chromosome, strand, attr)
-        self.id = id
-        self.name = name if name is not None else id
-        self.note = note
-        self.isoforms = {}
-        self.mrna = {}
-        self.exons = []
-        self.cds = []
-        self.exonMap = {}
-        self.cdsMap = {}
+        self.id: str = id
+        self.name: str = name if name is not None else id
+        self.note: str | None = note
+        self.isoforms: dict[str, Isoform] = {}
+        self.mrna: dict[str, mRNA] = {}
+        self.exons: list[Exon] = []
+        self.cds: list[CDS] = []
+        self.exonMap: dict[tuple[int, int], Exon] = {}
+        self.cdsMap: dict[tuple[str | RecordType, int, int], CDS] = {}
 
         # Codons for all transcripts/mRNA, one entry per transcript
-        self.start_codons = {}
-        self.end_codons = {}
+        self.start_codons: dict[str, tuple[int, int] | None] = {}
+        self.end_codons: dict[str, tuple[int, int] | None] = {}
 
         # All other features associated with genes in an annotation file, such as:
         #    3'/5' UTRs, mRNA, miRNA, siRNA, tRNA, rRNA, ncRNA, snRNA, snoRNA
-        self.features = []
+        self.features: list[BaseFeature] = []
 
-    def acceptorList(self):
+    def acceptorList(self) -> list[int]:
         """
         Returns a list of acceptors for this gene.
         """
@@ -899,7 +963,7 @@ class Gene(BaseFeature):
         Returns True if the exon was added; false otherwise.
         """
         if new_isoform is None:
-            raise ValueError("Illegal null isoform in exon {}".format(new_exon))
+            raise ValueError(f"Illegal null isoform in exon {new_exon}")
         result = False
         posTuple = (new_exon.minpos, new_exon.maxpos)
         try:
@@ -942,7 +1006,7 @@ class Gene(BaseFeature):
         mrna.parent = self
         return self.mrna.setdefault(mrna.id, mrna)
 
-    def detailString(self):
+    def detailString(self) -> str:
         result = (
             f"{self.id} ({self.chromosome}): {self.start()}-{self.end()} "
             f"(len={len(self)}, strand={self.strand}), {len(self.exons) + len(self.cds)} "
@@ -951,7 +1015,7 @@ class Gene(BaseFeature):
         result += "\n  ".join([x.detailString() for x in self.isoforms.values()])
         return result
 
-    def donorList(self):
+    def donorList(self) -> list[int]:
         """
         Returns a list of donors for this gene.
         """
@@ -960,12 +1024,12 @@ class Gene(BaseFeature):
             donorSet.update(transcript.donorList())
         return sorted(list(donorSet), reverse=(self.strand == "-"))
 
-    def endCodons(self):
+    def endCodons(self) -> dict[str, tuple[int, int] | None]:
         """Returns a dictionary of splice forms and their associated end codon locations.
         A codon location is given as a duple of (start,end) positions."""
         return self.end_codons
 
-    def get_feature_list(self, featureType):
+    def get_feature_list(self, featureType: str | RecordType) -> list[BaseFeature]:
         return [f for f in self.features if f.featureType == featureType]
 
     def getIntrons(self):
@@ -981,7 +1045,7 @@ class Gene(BaseFeature):
 
         return result.keys()
 
-    def getIsoform(self, id):
+    def getIsoform(self, id: str) -> Isoform:
         return self.isoforms[id]
 
     def getJunctions(self):
@@ -999,7 +1063,7 @@ class Gene(BaseFeature):
                 result[duple] = 1
         return result.keys()
 
-    def gffStrings(self):
+    def gffStrings(self) -> str:
         """Returns a GFF string representation of the gene record plus
         all elements within the gene."""
         stringList = [self.gffString(altAttributes={ID_FIELD: self.id})]
@@ -1086,10 +1150,10 @@ class Gene(BaseFeature):
                 stringList += self.mrna[k].gtfStrings()
         return "\n".join(stringList)
 
-    def isSingleExon(self):
+    def isSingleExon(self) -> bool:
         return len(self.exons) == 1
 
-    def sortedExons(self):
+    def sortedExons(self) -> list[Exon]:
         """Returns a list of all exons inferred by the gene model, sorted 5' to 3'."""
         tmpset = set()
         for isoform in self._iter_isoforms():
@@ -1104,12 +1168,12 @@ class Gene(BaseFeature):
         result.sort(key=featureSortKey, reverse=(self.strand == "-"))
         return result
 
-    def startCodons(self):
+    def startCodons(self) -> dict[str, tuple[int, int] | None]:
         """Returns a dictionary of splice forms and their associated start codon locations.
         A codon location is given as a duple of (start,end) positions."""
         return self.start_codons
 
-    def __str__(self):
+    def __str__(self) -> str:
         return (
             f"{self.id} ({self.chromosome}): {self.start()}-{self.end()} "
             f"(len={len(self)}, strand={self.strand}), {len(self.cds) + len(self.exons)} "
@@ -1118,10 +1182,20 @@ class Gene(BaseFeature):
 
 
 class PseudoGene(Gene):
-    def __init__(self, id, note, start, end, chromosome, strand, name=None, attr=None):
+    def __init__(
+        self,
+        id: str,
+        note: str | None,
+        start: int,
+        end: int,
+        chromosome: str,
+        strand: str,
+        name: str | None = None,
+        attr: AttrMap | None = None,
+    ) -> None:
         BaseFeature.__init__(self, RecordType.PSEUDOGENE, start, end, chromosome, strand, attr)
         self.id = id
-        self.name = name
+        self.name = name if name is not None else id
         self.note = note
         self.features = []
         self.exons = []
@@ -1134,7 +1208,7 @@ class PseudoGene(Gene):
         self.start_codons = {}
         self.end_codons = {}
 
-    def detailString(self):
+    def detailString(self) -> str:
         return self.__str__()
 
 
@@ -1157,10 +1231,11 @@ class GeneModel:
         self.model: dict[str, dict[str, Gene]] = {}
         self.mRNAforms: dict[str, dict[str, mRNA]] = {}
         self.sorted: dict[str, dict[str, list[Gene]]] = {}
+        self.interval_index: dict[str, dict[str, InMemoryIntervalIndex[Gene]]] = {}
 
         if gff_path:  # Load gene models from a file
             if isinstance(gff_path, str) and not os.path.exists(gff_path):
-                raise ValueError("Gene model file not found: {}".format(gff_path))
+                raise ValueError(f"Gene model file not found: {gff_path}")
 
             self.load_gene_model(
                 gff_path,
@@ -1171,10 +1246,10 @@ class GeneModel:
             )
 
             if not self.model:
-                raise ValueError("No gene models found in {}".format(gff_path))
+                raise ValueError(f"No gene models found in {gff_path}")
             self.make_sorted_model()
 
-    def __contains__(self, gene: object) -> bool:
+    def __contains__(self, gene: str | Gene) -> bool:
         """Returns true if a gene is in the model; false otherwise."""
         return str(gene) in self.allGenes
 
@@ -1194,7 +1269,7 @@ class GeneModel:
         """Adds a gene to a gene model.  Raises a ValueError if the
         gene has already been added."""
         if gene.id in self.model[gene.chromosome] or str(gene) in self.allGenes:
-            raise ValueError("Gene {} already stored in gene model".format(gene.id))
+            raise ValueError(f"Gene {gene.id} already stored in gene model")
 
         self.model[gene.chromosome][gene.id] = gene
         self.allGenes[str(gene)] = gene
@@ -1210,22 +1285,32 @@ class GeneModel:
         """Quasi-binary search through a gene list.  Performs binary search to a point,
         then performs linear search within a refined gene range.  Real binary search may
         not be possible since gene models may overlap or contain one within another."""
-        if (hi - lo) <= GENE_SEARCH_RANGE:
-            loBound = max(0, lo - GENE_SEARCH_MARGIN)
-            hiBound = min(hi + GENE_SEARCH_MARGIN, len(geneList))
-            for gene in geneList[loBound:hiBound]:
-                if gene.contains(loc, gene.strand):
-                    return (gene, gene)
+        _ = pfx
+        if not geneList:
             return (None, None)
-        else:
-            midpt = (hi + lo) // 2
+
+        lo_idx = lo
+        hi_idx = hi
+        while lo_idx <= hi_idx:
+            if (hi_idx - lo_idx) <= GENE_SEARCH_RANGE:
+                lo_bound = max(0, lo_idx - GENE_SEARCH_MARGIN)
+                hi_bound = min(hi_idx + GENE_SEARCH_MARGIN, len(geneList) - 1)
+                for idx in range(lo_bound, hi_bound + 1):
+                    gene = geneList[idx]
+                    if gene.contains(loc, gene.strand):
+                        return (gene, gene)
+                return (None, None)
+
+            midpt = (hi_idx + lo_idx) // 2
             midGene = geneList[midpt]
             if midGene.contains(loc, midGene.strand):
                 return (midGene, midGene)
-            elif loc > midGene.maxpos:
-                return self.binary_search_genes(geneList, loc, midpt + 1, hi, pfx + " ")
+            if loc > midGene.maxpos:
+                lo_idx = midpt + 1
             elif loc < midGene.minpos:
-                return self.binary_search_genes(geneList, loc, lo, midpt - 1, pfx + " ")
+                hi_idx = midpt - 1
+            else:
+                break
         return (None, None)
 
     def clean_name(self, s: str) -> str:
@@ -1356,23 +1441,20 @@ class GeneModel:
     ) -> Gene | None:
         """
         Finds the gene within the given chromosome that contains the given start
-        and end positions.  Uses quasi-binary search through the sorted list of genes.
+        and end positions.
+
+        Uses the in-memory interval index built by ``make_sorted_model``.
         """
-        # Only get genes on the correct strand:
+        chrom_key = chrom.lower()
         try:
-            geneList = self.sorted[chrom.lower()][strand]
+            strand_index = self.interval_index[chrom_key][strand]
         except KeyError:
-            raise KeyError(f"Key {chrom.lower()} not found in {','.join(self.sorted.keys())}")
+            raise KeyError(f"Key {chrom_key} not found in {','.join(self.sorted.keys())}")
 
-        (logene, higene) = self.binary_search_genes(geneList, startPos, 0, len(geneList) - 1)
-
-        if not (logene or higene):
-            return None
-        elif logene and (logene.contains(startPos, strand) or logene.contains(endPos, strand)):
-            return logene
-        elif higene and (higene.contains(startPos, strand) or higene.contains(endPos, strand)):
-            return higene
-
+        query = IntervalQuery(min(startPos, endPos), max(startPos, endPos))
+        for gene in strand_index.overlaps(query):
+            if gene.contains(startPos, strand) or gene.contains(endPos, strand):
+                return gene
         return None
 
     def get_gene_records(
@@ -1524,8 +1606,10 @@ class GeneModel:
 
     def make_sorted_model(self) -> None:
         self.sorted = {}
+        self.interval_index = {}
         for chrom in self.model.keys():
             self.sorted[chrom] = {}
+            self.interval_index[chrom] = {}
             # Get a list of gene objects sorted by position
             geneList = sorted(
                 self.model[chrom].values(),
@@ -1536,6 +1620,9 @@ class GeneModel:
             self.sorted[chrom] = {"-": [], "+": [], ".": []}
             for g in geneList:
                 self.sorted[chrom][g.strand].append(g)
+            for strand, strand_genes in self.sorted[chrom].items():
+                if strand_genes:
+                    self.interval_index[chrom][strand] = InMemoryIntervalIndex(strand_genes)
 
     def write_gff(
         self,
