@@ -4,12 +4,12 @@ from __future__ import annotations
 
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
-from typing import TypeAlias
+from typing import Protocol, TypeAlias
+from urllib.parse import unquote
 
 import structlog
 
-# Safe import boundary: GeneModel loads this parser lazily at call time.
-import SpliceGrapher.formats.gene_model as gm
+import SpliceGrapher.formats.models as model_domain
 from SpliceGrapher.core.enum_coercion import coerce_enum
 from SpliceGrapher.core.enums import RecordType, Strand
 from SpliceGrapher.shared.file_utils import ez_open
@@ -18,6 +18,36 @@ from SpliceGrapher.shared.progress import ProgressIndicator
 
 RecordHandler: TypeAlias = Callable[["ParseContext", "ParsedRecord"], None]
 LOGGER = structlog.get_logger(__name__)
+PARENT_CACHE_MAX_ENTRIES = 200_000
+PARENT_CANDIDATE_MAX_ENTRIES = 200_000
+
+
+class GeneModelLike(Protocol):
+    model: dict[str, dict[str, model_domain.Gene]]
+    mrna_forms: dict[str, dict[str, model_domain.Mrna]]
+    mrna_gene: dict[str, dict[str, model_domain.Gene]]
+    all_genes: dict[str, model_domain.Gene]
+    found_types: dict[RecordType, bool]
+    all_chr: dict[str, model_domain.Chromosome]
+    chromosome_index: dict[str, model_domain.ChromosomeGeneIndex]
+
+    def add_chromosome(self, start: int, end: int, name: str) -> None: ...
+
+    def add_gene(self, gene: model_domain.Gene) -> None: ...
+
+    def get_parent(
+        self,
+        s: str,
+        chrom: str,
+        search_genes: bool = True,
+        search_mrna: bool = True,
+    ) -> model_domain.Gene | model_domain.Mrna | None: ...
+
+    def get_mrna_parent(
+        self,
+        chrom: str,
+        mrna_id: str,
+    ) -> model_domain.Gene | None: ...
 
 
 @dataclass(slots=True)
@@ -29,6 +59,8 @@ class ParseStats:
     cds_count: int = 0
     orphan_mrna_count: int = 0
     bad_lines: int = 0
+    parent_cache_clear_count: int = 0
+    parent_candidate_clear_count: int = 0
 
 
 @dataclass(slots=True)
@@ -45,14 +77,18 @@ class ParsedRecord:
 
 @dataclass(slots=True)
 class ParseContext:
-    model: gm.GeneModel
+    model: GeneModelLike
     require_notes: bool
     verbose: bool
     ignore_errors: bool
     chromosomes: set[str] | None = None
+    parent_cache_max_entries: int = PARENT_CACHE_MAX_ENTRIES
+    parent_candidate_max_entries: int = PARENT_CANDIDATE_MAX_ENTRIES
     stats: ParseStats = field(default_factory=ParseStats)
     gene_alias: dict[str, str] = field(default_factory=dict)
-    parent_cache: dict[tuple[str, str, bool, bool], gm.Gene | gm.Mrna] = field(default_factory=dict)
+    parent_cache: dict[tuple[str, str, bool, bool], model_domain.Gene | model_domain.Mrna] = field(
+        default_factory=dict
+    )
     parent_candidates: dict[str, tuple[str, ...]] = field(default_factory=dict)
 
     def fail(self, message: str) -> None:
@@ -69,9 +105,33 @@ class ParseContext:
         self.write_verbose(
             f"line {line_no}: invalid GFF format (not enough columns); file may be corrupt"
         )
-        if self.stats.bad_lines >= gm.MAX_BAD_LINES:
+        if self.stats.bad_lines >= model_domain.MAX_BAD_LINES:
             LOGGER.error("gene_model_gff_invalid_input", line=line_no)
             raise ValueError("Invalid GFF input file")
+
+    def cache_parent_candidate(self, parent_string: str, candidates: tuple[str, ...]) -> None:
+        if (
+            self.parent_candidate_max_entries > 0
+            and parent_string not in self.parent_candidates
+            and len(self.parent_candidates) >= self.parent_candidate_max_entries
+        ):
+            self.parent_candidates.clear()
+            self.stats.parent_candidate_clear_count += 1
+        self.parent_candidates[parent_string] = candidates
+
+    def cache_parent(
+        self,
+        cache_key: tuple[str, str, bool, bool],
+        parent_record: model_domain.Gene | model_domain.Mrna,
+    ) -> None:
+        if (
+            self.parent_cache_max_entries > 0
+            and cache_key not in self.parent_cache
+            and len(self.parent_cache) >= self.parent_cache_max_entries
+        ):
+            self.parent_cache.clear()
+            self.stats.parent_cache_clear_count += 1
+        self.parent_cache[cache_key] = parent_record
 
 
 def _subnames(full_string: str, delimiter: str) -> list[str]:
@@ -91,6 +151,25 @@ def _normalize_chromosomes(chromosomes: Sequence[str] | str | None) -> set[str] 
     return {str(chrom).lower() for chrom in chromosomes}
 
 
+def _clean_name(value: str) -> str:
+    revised = unquote(value)
+    revised = revised.replace(",", "")
+    return revised.replace(" ", "-")
+
+
+def _parse_annotations(annotation_string: str) -> dict[str, str]:
+    value_string = annotation_string.replace(" ", "")
+    result: dict[str, str] = {}
+    for item in value_string.split(";"):
+        if "=" not in item:
+            continue
+        key, value = item.split("=", 1)
+        if not key:
+            continue
+        result[key] = value
+    return result
+
+
 def _candidate_parent_ids(ctx: ParseContext, parent_string: str) -> tuple[str, ...]:
     cached = ctx.parent_candidates.get(parent_string)
     if cached is not None:
@@ -105,7 +184,9 @@ def _candidate_parent_ids(ctx: ParseContext, parent_string: str) -> tuple[str, .
             candidates.append(candidate)
 
     add_candidate(parent_string)
-    delimiters = [delimiter for delimiter in gm.FORM_DELIMITERS if delimiter in parent_string]
+    delimiters = [
+        delimiter for delimiter in model_domain.FORM_DELIMITERS if delimiter in parent_string
+    ]
     for delimiter in delimiters:
         for candidate in _subnames(parent_string, delimiter):
             add_candidate(candidate)
@@ -115,11 +196,13 @@ def _candidate_parent_ids(ctx: ParseContext, parent_string: str) -> tuple[str, .
             add_candidate(piece)
 
     result = tuple(candidates)
-    ctx.parent_candidates[parent_string] = result
+    ctx.cache_parent_candidate(parent_string, result)
     return result
 
 
-def _iter_record_lines(gff_records: gm.GffRecordSource, *, verbose: bool) -> Iterable[str]:
+def _iter_record_lines(
+    gff_records: model_domain.GffRecordSource, *, verbose: bool
+) -> Iterable[str]:
     if isinstance(gff_records, str):
         if verbose:
             LOGGER.info("gene_model_gff_loading_file", source=gff_records)
@@ -144,7 +227,7 @@ def _resolve_parent(
     *,
     search_genes: bool = True,
     search_mrna: bool = True,
-) -> gm.Gene | gm.Mrna | None:
+) -> model_domain.Gene | model_domain.Mrna | None:
     parent_string = parent_id.upper()
     chrom_key = chrom.lower()
     cache_key = (chrom_key, parent_string, search_genes, search_mrna)
@@ -159,7 +242,7 @@ def _resolve_parent(
         search_mrna=search_mrna,
     )
     if exact is not None:
-        ctx.parent_cache[cache_key] = exact
+        ctx.cache_parent(cache_key, exact)
         return exact
 
     candidates = _candidate_parent_ids(ctx, parent_string)
@@ -168,14 +251,14 @@ def _resolve_parent(
         for candidate in candidates:
             transcript = ctx.model.mrna_forms[chrom_key].get(candidate)
             if transcript is not None:
-                ctx.parent_cache[cache_key] = transcript
+                ctx.cache_parent(cache_key, transcript)
                 return transcript
 
     if search_genes and chrom_key in ctx.model.model:
         for candidate in candidates:
             gene = ctx.model.model[chrom_key].get(candidate)
             if gene is not None:
-                ctx.parent_cache[cache_key] = gene
+                ctx.cache_parent(cache_key, gene)
                 return gene
     return None
 
@@ -187,7 +270,7 @@ def _resolve_strand(
     expected: str,
     mismatch_message: str,
 ) -> str:
-    if observed in gm.VALID_STRANDS and observed != expected:
+    if observed in model_domain.VALID_STRANDS and observed != expected:
         ctx.fail(mismatch_message)
         return observed
     return expected
@@ -203,7 +286,7 @@ def _parse_record_line(ctx: ParseContext, line: str, line_no: int) -> ParsedReco
         ctx.report_bad_line(line_no)
         return None
 
-    annots = ctx.model.get_annotation_dict(parts[-1])
+    annots = _parse_annotations(parts[-1])
     chrom = parts[0].lower()
     if ctx.chromosomes and chrom not in ctx.chromosomes:
         return None
@@ -212,7 +295,7 @@ def _parse_record_line(ctx: ParseContext, line: str, line_no: int) -> ParsedReco
         rec_type = coerce_enum(parts[2].lower(), RecordType, field="record_type")
     except ValueError as exc:
         raise ValueError(f"line {line_no}: unknown record type '{parts[2]}'") from exc
-    rec_type = gm.RECTYPE_MAP.get(rec_type, rec_type)
+    rec_type = model_domain.RECTYPE_MAP.get(rec_type, rec_type)
 
     start_pos = int(parts[3])
     end_pos = int(parts[4])
@@ -222,7 +305,7 @@ def _parse_record_line(ctx: ParseContext, line: str, line_no: int) -> ParsedReco
         raise ValueError(f"line {line_no}: unknown strand '{parts[6]}'") from exc
 
     ctx.model.found_types[rec_type] = (
-        rec_type in gm.KNOWN_RECTYPES and rec_type not in gm.IGNORE_RECTYPES
+        rec_type in model_domain.KNOWN_RECTYPES and rec_type not in model_domain.IGNORE_RECTYPES
     )
     if not ctx.model.found_types[rec_type]:
         return None
@@ -240,22 +323,22 @@ def _parse_record_line(ctx: ParseContext, line: str, line_no: int) -> ParsedReco
 
 
 def _handle_gene_record(ctx: ParseContext, record: ParsedRecord) -> None:
-    gid = _annotation_value(record.annots, gm.ID_FIELD)
+    gid = _annotation_value(record.annots, model_domain.ID_FIELD)
     if gid is None:
         raise ValueError(
             f"line {record.line_no}: {record.rec_type} record has no ID field:\n{record.raw_line}\n"
         )
     gid = gid.upper()
 
-    name = ctx.model.get_annotation(gm.NAME_FIELD, record.annots, None)
+    name = _annotation_value(record.annots, model_domain.NAME_FIELD)
     if name:
-        name = ctx.model.clean_name(name)
+        name = _clean_name(name)
 
-    note = ctx.model.get_annotation(gm.NOTE_FIELD, record.annots)
+    note = _annotation_value(record.annots, model_domain.NOTE_FIELD)
     if not note and ctx.require_notes:
         return
 
-    if record.strand not in gm.VALID_STRANDS:
+    if record.strand not in model_domain.VALID_STRANDS:
         ctx.fail(f"line {record.line_no}: {record.rec_type} record with unknown strand")
 
     if record.chrom not in ctx.model.model:
@@ -263,7 +346,7 @@ def _handle_gene_record(ctx: ParseContext, record: ParsedRecord) -> None:
         ctx.model.add_chromosome(1, record.end_pos, record.chrom)
 
     if record.rec_type == RecordType.PSEUDOGENE:
-        gene_obj: gm.Gene = gm.PseudoGene(
+        gene_obj: model_domain.Gene = model_domain.PseudoGene(
             gid,
             note,
             record.start_pos,
@@ -274,7 +357,7 @@ def _handle_gene_record(ctx: ParseContext, record: ParsedRecord) -> None:
             record.annots,
         )
     else:
-        gene_obj = gm.Gene(
+        gene_obj = model_domain.Gene(
             gid,
             note,
             record.start_pos,
@@ -298,10 +381,10 @@ def _handle_gene_record(ctx: ParseContext, record: ParsedRecord) -> None:
     ctx.stats.gene_count += 1
 
 
-def _resolve_exon_parent(ctx: ParseContext, record: ParsedRecord) -> gm.Gene | None:
-    parent_record: gm.Gene | gm.Mrna | None = None
+def _resolve_exon_parent(ctx: ParseContext, record: ParsedRecord) -> model_domain.Gene | None:
+    parent_record: model_domain.Gene | model_domain.Mrna | None = None
     tried: set[str] = set()
-    for key in gm.POSSIBLE_GENE_FIELDS:
+    for key in model_domain.POSSIBLE_GENE_FIELDS:
         parent_name = _annotation_value(record.annots, key)
         if parent_name is None or parent_name in tried:
             continue
@@ -312,15 +395,15 @@ def _resolve_exon_parent(ctx: ParseContext, record: ParsedRecord) -> gm.Gene | N
 
     if parent_record is None:
         return None
-    if isinstance(parent_record, gm.Mrna):
+    if isinstance(parent_record, model_domain.Mrna):
         parent_gene = ctx.model.get_mrna_parent(record.chrom, parent_record.id)
-        if parent_gene is None and isinstance(parent_record.parent, gm.Gene):
+        if parent_gene is None and isinstance(parent_record.parent, model_domain.Gene):
             parent_gene = parent_record.parent
         if parent_gene is None:
             ctx.fail(f"line {record.line_no}: Mrna parent is missing gene for exon record")
             return None
         return parent_gene
-    if not isinstance(parent_record, gm.Gene):
+    if not isinstance(parent_record, model_domain.Gene):
         ctx.fail(f"line {record.line_no}: exon parent {parent_record} is not a gene")
         return None
     return parent_record
@@ -329,12 +412,12 @@ def _resolve_exon_parent(ctx: ParseContext, record: ParsedRecord) -> gm.Gene | N
 def _resolve_isoform(
     ctx: ParseContext,
     record: ParsedRecord,
-    gene_obj: gm.Gene,
-) -> tuple[gm.Isoform | None, bool]:
+    gene_obj: model_domain.Gene,
+) -> tuple[model_domain.Isoform | None, bool]:
     isoform = None
     iso_name = ""
     tried: set[str] = set()
-    for key in gm.POSSIBLE_FORM_FIELDS:
+    for key in model_domain.POSSIBLE_FORM_FIELDS:
         name = _annotation_value(record.annots, key)
         if name is None or name in tried:
             continue
@@ -359,12 +442,12 @@ def _resolve_isoform(
         ),
     )
     iso_attr = {
-        str(gm.PARENT_FIELD): gene_obj.id,
-        str(gm.NAME_FIELD): iso_name,
-        str(gm.ID_FIELD): iso_name,
+        str(model_domain.PARENT_FIELD): gene_obj.id,
+        str(model_domain.NAME_FIELD): iso_name,
+        str(model_domain.ID_FIELD): iso_name,
     }
     return (
-        gm.Isoform(
+        model_domain.Isoform(
             iso_name,
             record.start_pos,
             record.end_pos,
@@ -397,24 +480,32 @@ def _handle_exon_record(ctx: ParseContext, record: ParsedRecord) -> None:
             f"strand ({gene_obj.strand}) for {gene_obj.id}"
         ),
     )
-    exon = gm.Exon(record.start_pos, record.end_pos, record.chrom, strand, record.annots)
+    exon = model_domain.Exon(
+        record.start_pos,
+        record.end_pos,
+        record.chrom,
+        strand,
+        record.annots,
+    )
     if gene_obj.add_exon(isoform, exon):
         ctx.stats.exon_count += 1
     if created_isoform:
         ctx.stats.iso_count += 1
 
 
-def _resolve_mrna_gene(ctx: ParseContext, record: ParsedRecord, parent_id: str) -> gm.Gene | None:
+def _resolve_mrna_gene(
+    ctx: ParseContext, record: ParsedRecord, parent_id: str
+) -> model_domain.Gene | None:
     parent_id_upper = parent_id.upper()
     parent_candidate = _resolve_parent(ctx, parent_id_upper, record.chrom)
-    if isinstance(parent_candidate, gm.Gene):
+    if isinstance(parent_candidate, model_domain.Gene):
         return parent_candidate
 
     alias = ctx.gene_alias.get(parent_id_upper)
     if alias is None:
         return None
     alias_candidate = _resolve_parent(ctx, alias, record.chrom)
-    if isinstance(alias_candidate, gm.Gene):
+    if isinstance(alias_candidate, model_domain.Gene):
         return alias_candidate
     return None
 
@@ -427,13 +518,13 @@ def _handle_mrna_record(ctx: ParseContext, record: ParsedRecord) -> None:
         )
         return
 
-    transcript_id = _annotation_value(record.annots, gm.ID_FIELD)
+    transcript_id = _annotation_value(record.annots, model_domain.ID_FIELD)
     if transcript_id is None:
         ctx.fail(f"line {record.line_no}: Mrna with missing ID")
         return
     transcript_id = transcript_id.upper()
 
-    parent_id = ctx.model.get_annotation(gm.PARENT_FIELD, record.annots)
+    parent_id = _annotation_value(record.annots, model_domain.PARENT_FIELD)
     if parent_id is None:
         return
 
@@ -465,11 +556,11 @@ def _handle_mrna_record(ctx: ParseContext, record: ParsedRecord) -> None:
         ),
     )
     mrna_attr = {
-        str(gm.PARENT_FIELD): mrna_gene.id,
-        str(gm.NAME_FIELD): transcript_id,
-        str(gm.ID_FIELD): transcript_id,
+        str(model_domain.PARENT_FIELD): mrna_gene.id,
+        str(model_domain.NAME_FIELD): transcript_id,
+        str(model_domain.ID_FIELD): transcript_id,
     }
-    mrna = gm.Mrna(
+    mrna = model_domain.Mrna(
         transcript_id,
         record.start_pos,
         record.end_pos,
@@ -497,18 +588,18 @@ def _handle_transcript_region_record(ctx: ParseContext, record: ParsedRecord) ->
         )
         return
 
-    parent_id = _annotation_value(record.annots, gm.PARENT_FIELD)
+    parent_id = _annotation_value(record.annots, model_domain.PARENT_FIELD)
     if parent_id is None:
         return
     mrna_record = _resolve_parent(ctx, parent_id, record.chrom, search_genes=False)
     if mrna_record is None:
         ctx.write_verbose(f"line {record.line_no}: no Mrna {parent_id} found for {record.rec_type}")
         return
-    if not isinstance(mrna_record, gm.Mrna):
+    if not isinstance(mrna_record, model_domain.Mrna):
         ctx.fail(f"line {record.line_no}: parent {parent_id} is not an Mrna record")
         return
     parent_gene = ctx.model.get_mrna_parent(record.chrom, mrna_record.id)
-    if parent_gene is None and isinstance(mrna_record.parent, gm.Gene):
+    if parent_gene is None and isinstance(mrna_record.parent, model_domain.Gene):
         parent_gene = mrna_record.parent
     if parent_gene is None:
         ctx.fail(
@@ -525,7 +616,7 @@ def _handle_transcript_region_record(ctx: ParseContext, record: ParsedRecord) ->
             f"match Mrna strand ({mrna_record.strand})"
         ),
     )
-    cds = gm.cds_factory(
+    cds = model_domain.cds_factory(
         record.rec_type,
         record.start_pos,
         record.end_pos,
@@ -549,7 +640,7 @@ def _extract_parent_gene_id(parent_id: str) -> str | None:
 def _handle_misc_feature_record(ctx: ParseContext, record: ParsedRecord) -> None:
     if record.chrom not in ctx.model.model:
         return
-    parent_value = _annotation_value(record.annots, gm.PARENT_FIELD)
+    parent_value = _annotation_value(record.annots, model_domain.PARENT_FIELD)
     if parent_value is None:
         return
     parent_gene_id = _extract_parent_gene_id(parent_value)
@@ -560,7 +651,7 @@ def _handle_misc_feature_record(ctx: ParseContext, record: ParsedRecord) -> None
         return
     try:
         feature_gene.add_feature(
-            gm.BaseFeature(
+            model_domain.BaseFeature(
                 record.rec_type,
                 record.start_pos,
                 record.end_pos,
@@ -592,8 +683,8 @@ RECORD_HANDLERS: dict[RecordType, RecordHandler] = {
 
 
 def load_gene_model_records(
-    model: gm.GeneModel,
-    gff_records: gm.GffRecordSource,
+    model: GeneModelLike,
+    gff_records: model_domain.GffRecordSource,
     *,
     require_notes: bool = False,
     chromosomes: Sequence[str] | str | None = None,
@@ -651,6 +742,8 @@ def load_gene_model_records(
                 mrna_count_fmt=comma_format(ctx.stats.mrna_count),
                 orphan_mrna_count_fmt=comma_format(ctx.stats.orphan_mrna_count),
                 cds_count_fmt=comma_format(ctx.stats.cds_count),
+                parent_cache_clear_count=ctx.stats.parent_cache_clear_count,
+                parent_candidate_clear_count=ctx.stats.parent_candidate_clear_count,
             )
         else:
             LOGGER.warning("gene_model_gff_no_genes_loaded")
