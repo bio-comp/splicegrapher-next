@@ -22,7 +22,7 @@ ALLOWED_NEW_IGNORE_TARGETS: tuple[str, ...] = (
 )
 ENUM_CONTROL_FLOW_PATHS: tuple[str, ...] = (
     "SpliceGrapher/SpliceGraph.py",
-    "SpliceGrapher/formats/GeneModel.py",
+    "SpliceGrapher/formats/gene_model.py",
 )
 MAGIC_STRING_CONTROL_FLOW_LITERALS: tuple[str, ...] = (
     "gene",
@@ -41,7 +41,7 @@ MAGIC_STRING_CONTROL_FLOW_LITERALS: tuple[str, ...] = (
 )
 OVERLAP_CONTROL_FLOW_PATHS: tuple[str, ...] = (
     "SpliceGrapher/SpliceGraph.py",
-    "SpliceGrapher/formats/GeneModel.py",
+    "SpliceGrapher/formats/gene_model.py",
 )
 # Ratchet baseline: existing manual overlap logic is tolerated, but new instances
 # in protected modules must route through interval helper abstractions.
@@ -50,7 +50,7 @@ BASELINE_MANUAL_OVERLAP_LINES: dict[str, set[str]] = {
         "if e.minpos < n.minpos and n.maxpos < e.maxpos:",
         "return self.maxpos > o.minpos and self.minpos < o.maxpos",
     },
-    "SpliceGrapher/formats/GeneModel.py": {
+    "SpliceGrapher/formats/gene_model.py": {
         "return strand == self.strand and self.minpos <= pos <= self.maxpos",
         "if g.maxpos < minpos or g.minpos > maxpos:",
     },

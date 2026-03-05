@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING, TextIO
 from SpliceGrapher.shared.progress import ProgressIndicator
 
 if TYPE_CHECKING:
-    from SpliceGrapher.formats.GeneModel import Gene, GeneModel
+    from SpliceGrapher.formats.gene_model import Gene, GeneModel
 
 GeneFilter = Callable[["Gene"], bool]
 

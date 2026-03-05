@@ -11,7 +11,7 @@ import gffutils
 
 from SpliceGrapher.core.enum_coercion import coerce_enum
 from SpliceGrapher.core.enums import AttrKey, RecordType
-from SpliceGrapher.formats.GeneModel import (
+from SpliceGrapher.formats.gene_model import (
     CDS,
     FP_UTR,
     TP_UTR,

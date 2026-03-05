@@ -8,9 +8,9 @@ import tracemalloc
 from dataclasses import dataclass
 from pathlib import Path
 from time import perf_counter
-from typing import Callable
+from typing import Callable, TypedDict
 
-from SpliceGrapher.formats.GeneModel import GeneModel
+from SpliceGrapher.formats.gene_model import GeneModel
 from SpliceGrapher.formats.polars_gff import (
     PolarsNotInstalledError,
     load_gff_rows,
@@ -64,6 +64,25 @@ class SingleCycleEvaluation:
     synthetic: dict[str, dict[str, dict[str, BenchmarkMetrics]]]
     real: dict[str, dict[str, dict[str, BenchmarkMetrics]]]
     decision: GoNoGoDecision
+
+
+class TranscriptExonPayload(TypedDict):
+    transcript: str
+    strand: str
+    chrom: str
+    exons: list[tuple[int, int]]
+
+
+class AnalyticsPayload(TypedDict):
+    shared_exons: list[tuple[str, str, int, int, int]]
+    transcript_exons: list[TranscriptExonPayload]
+    junctions: list[tuple[str, int, int]]
+
+
+def _as_int(value: int | str | None, *, field: str) -> int:
+    if value is None:
+        raise ValueError(f"Missing numeric value for {field}")
+    return int(value)
 
 
 def _count_data_rows(path: Path) -> int:
@@ -171,8 +190,8 @@ def _exon_records_from_rows(path: Path) -> list[tuple[str, str, int, int, str]]:
             continue
         chrom = str(row["chrom"])
         strand = str(row["strand"])
-        start = int(row["start"])
-        end = int(row["end"])
+        start = _as_int(row["start"], field="start")
+        end = _as_int(row["end"], field="end")
         parent_value = row["parent_id"] if isinstance(row["parent_id"], str) else None
         for parent_id in _normalize_parent_ids(parent_value):
             result.append((chrom, strand, start, end, parent_id))
@@ -210,8 +229,12 @@ def _exon_records_from_gene_model(path: Path) -> list[tuple[str, str, int, int, 
 
 def _analytics_signature(exon_records: list[tuple[str, str, int, int, str]]) -> str:
     if not exon_records:
-        payload = {"shared_exons": [], "transcript_exons": [], "junctions": []}
-        encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
+        empty_payload: AnalyticsPayload = {
+            "shared_exons": [],
+            "transcript_exons": [],
+            "junctions": [],
+        }
+        encoded = json.dumps(empty_payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
         return hashlib.sha256(encoded).hexdigest()
 
     exon_group_map: dict[tuple[str, str, int, int], set[str]] = {}
@@ -227,7 +250,7 @@ def _analytics_signature(exon_records: list[tuple[str, str, int, int, str]]) -> 
         if len(parents) > 1
     )
 
-    transcript_exons: list[dict[str, object]] = []
+    transcript_exons: list[TranscriptExonPayload] = []
     junctions: list[tuple[str, int, int]] = []
 
     for transcript_id, exons in sorted(transcript_map.items()):
@@ -257,12 +280,12 @@ def _analytics_signature(exon_records: list[tuple[str, str, int, int, str]]) -> 
             junctions.append((transcript_id, donor, acceptor))
             prev_start, prev_end = curr_start, curr_end
 
-    payload = {
+    signature_payload: AnalyticsPayload = {
         "shared_exons": shared_exons,
         "transcript_exons": transcript_exons,
         "junctions": sorted(junctions),
     }
-    encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    encoded = json.dumps(signature_payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
     return hashlib.sha256(encoded).hexdigest()
 
 

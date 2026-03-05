@@ -8,7 +8,7 @@ This benchmark implements SGN's timeboxed go/no-go policy for optional backend p
 
 Compared paths:
 
-- baseline object path: `SpliceGrapher.formats.GeneModel.GeneModel`
+- baseline object path: `SpliceGrapher.formats.gene_model.GeneModel`
 - baseline row path: `SpliceGrapher.formats.polars_gff.load_gff_rows`
 - candidate path: `SpliceGrapher.formats.polars_gff.load_gff_to_polars`
 

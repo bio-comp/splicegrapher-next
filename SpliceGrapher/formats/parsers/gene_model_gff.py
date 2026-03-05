@@ -13,7 +13,7 @@ from SpliceGrapher.shared.format_utils import comma_format
 from SpliceGrapher.shared.progress import ProgressIndicator
 
 if TYPE_CHECKING:
-    from SpliceGrapher.formats.GeneModel import GeneModel, GffRecordSource
+    from SpliceGrapher.formats.gene_model import GeneModel, GffRecordSource
 
 
 def _subnames(full_string: str, delimiter: str) -> list[str]:
@@ -29,7 +29,7 @@ def _resolve_parent(
     search_genes: bool = True,
     search_mrna: bool = True,
 ):
-    import SpliceGrapher.formats.GeneModel as gm
+    import SpliceGrapher.formats.gene_model as gm
 
     parent_string = parent_id.upper()
     chrom_key = chrom.lower()
@@ -78,7 +78,7 @@ def load_gene_model_records(
     ignore_errors: bool = False,
 ) -> None:
     """Load gene model records from GFF-like input into ``model``."""
-    import SpliceGrapher.formats.GeneModel as gm
+    import SpliceGrapher.formats.gene_model as gm
 
     chromosomes_list: list[str] | None = None
 
