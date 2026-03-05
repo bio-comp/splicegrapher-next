@@ -68,13 +68,16 @@ def run_command(
     )
 
 
-def runCommand(s: str, **args: object) -> None:
+def runCommand(
+    s: str,
+    *,
+    logstream: TextIO | None = None,
+    debug: bool = False,
+    exitOnError: bool = True,
+    stderr: SubprocessStream = None,
+    stdout: SubprocessStream = None,
+) -> None:
     """Announces a command runs it.."""
-    logstream = getAttribute("logstream", None, **args)
-    debug = getAttribute("debug", False, **args)
-    exitOnError = getAttribute("exitOnError", True, **args)
-    stderr = getAttribute("stderr", None, **args)
-    stdout = getAttribute("stdout", None, **args)
     LOGGER.info("command_started", command=s, debug=debug)
     message = "    " + time_string(f"{s}\n")
     sys.stderr.write(message)
