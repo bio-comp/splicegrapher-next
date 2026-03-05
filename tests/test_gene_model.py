@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import inspect
-from dataclasses import dataclass
 from pathlib import Path
 
 import pytest
@@ -9,16 +8,6 @@ import pytest
 from SpliceGrapher.core.enums import RecordType, Strand
 from SpliceGrapher.formats import gene_model as gm
 from SpliceGrapher.formats.gene_model import Exon, Gene, GeneModel, feature_search
-
-
-@dataclass
-class _DummyGene:
-    minpos: int
-    maxpos: int
-    strand: str = "+"
-
-    def contains(self, loc: int, strand: str) -> bool:
-        return strand == self.strand and self.minpos <= loc <= self.maxpos
 
 
 def test_feature_search_supports_recursive_midpoint_indexing() -> None:
@@ -33,18 +22,18 @@ def test_feature_search_supports_recursive_midpoint_indexing() -> None:
 
 
 def test_mrna_sorted_exons_uses_explicit_minintron_keyword() -> None:
-    transcript = gm.mRNA("tx1", 1, 20, "chr1", "+")
+    transcript = gm.Mrna("tx1", 1, 20, "chr1", "+")
     transcript.add_cds(gm.CDS(1, 5, "chr1", "+"))
     transcript.add_cds(gm.CDS(7, 10, "chr1", "+"))
 
-    merged = transcript.sortedExons(minintron=3)
-    unmerged = transcript.sortedExons(minintron=2)
+    merged = transcript.sorted_exons(minintron=3)
+    unmerged = transcript.sorted_exons(minintron=2)
 
     assert len(merged) == 1
     assert len(unmerged) == 2
 
     with pytest.raises(TypeError):
-        transcript.sortedExons(min_intron=3)  # type: ignore[call-arg]
+        transcript.sorted_exons(min_intron=3)  # type: ignore[call-arg]
 
 
 def test_feature_search_snake_case_api_returns_expected_match() -> None:
@@ -63,9 +52,9 @@ def test_feature_overlap_and_contains_match_interval_helper_semantics() -> None:
     right = Exon(20, 30, "chr1", "+")
     nested = Exon(12, 18, "chr1", "+")
 
-    assert gm.featureOverlaps(left, right)
-    assert gm.featureContains(left, nested)
-    assert not gm.featureContains(left, right)
+    assert gm.feature_overlaps(left, right)
+    assert gm.feature_contains(left, nested)
+    assert not gm.feature_contains(left, right)
 
 
 def test_feature_search_returns_preceding_feature_when_not_contained() -> None:
@@ -79,14 +68,14 @@ def test_feature_search_returns_preceding_feature_when_not_contained() -> None:
     assert feature_search(features, query) is features[1]
 
 
-def test_binary_search_genes_handles_large_gene_lists() -> None:
+def test_get_gene_from_locations_uses_interval_index() -> None:
     model = GeneModel(None)
-    genes = [_DummyGene(i * 10, (i * 10) + 9) for i in range(30)]
+    model.add_chromosome(1, 1000, "chr1")
+    gene = Gene("GENE_A", None, 150, 190, "chr1", "+", name="GENE_A")
+    model.add_gene(gene)
+    model.make_sorted_model()
 
-    low_gene, high_gene = model.binary_search_genes(genes, 155, 0, len(genes) - 1)
-
-    assert low_gene is genes[15]
-    assert high_gene is genes[15]
+    assert model.get_gene_from_locations("chr1", 155, 160, "+") is gene
 
 
 def test_write_gff_writes_chromosome_records(tmp_path: Path) -> None:
@@ -140,7 +129,7 @@ def test_gene_model_alias_mapping_uses_recordtype_domain() -> None:
 
 
 def test_gene_model_valid_strands_uses_enum_domain() -> None:
-    assert gm.VALID_STRANDS == set(Strand)
+    assert set(Strand) == gm.VALID_STRANDS
 
 
 def test_gene_model_gtf_policy_and_splice_offset_contract_constants() -> None:
@@ -161,29 +150,29 @@ def test_exon_splice_site_offset_contract_is_explicit_for_both_strands() -> None
 def test_isoform_gtf_strings_remain_genomic_ascending_on_minus_strand() -> None:
     gene = Gene("GENE1", None, 1, 200, "chr1", "-", name="GENE1")
     isoform = gm.Isoform("TX1", 1, 200, "chr1", "-")
-    isoform.setParent(gene)
+    isoform.set_parent(gene)
     isoform.add_exon(Exon(80, 90, "chr1", "-"))
     isoform.add_exon(Exon(20, 30, "chr1", "-"))
 
-    starts = [int(line.split("\t")[3]) for line in isoform.gtfStrings()]
+    starts = [int(line.split("\t")[3]) for line in isoform.gtf_strings()]
     assert starts == [20, 80]
 
 
 def test_mrna_gtf_strings_remain_genomic_ascending_on_minus_strand() -> None:
     gene = Gene("GENE1", None, 1, 200, "chr1", "-", name="GENE1")
-    transcript = gm.mRNA("TX1", 1, 200, "chr1", "-")
+    transcript = gm.Mrna("TX1", 1, 200, "chr1", "-")
     transcript.parent = gene
     transcript.add_cds(gm.CDS(80, 90, "chr1", "-"))
     transcript.add_cds(gm.CDS(20, 30, "chr1", "-"))
 
-    cds_starts = [int(line.split("\t")[3]) for line in transcript.gtfStrings()]
+    cds_starts = [int(line.split("\t")[3]) for line in transcript.gtf_strings()]
     assert cds_starts == [20, 80]
 
 
 def test_gene_gtf_strings_common_path_remains_genomic_ascending_on_minus_strand() -> None:
     gene = Gene("GENE1", None, 1, 200, "chr1", "-", name="GENE1")
     isoform = gm.Isoform("TX1", 1, 200, "chr1", "-")
-    transcript = gm.mRNA("TX1", 1, 200, "chr1", "-")
+    transcript = gm.Mrna("TX1", 1, 200, "chr1", "-")
     gene.add_isoform(isoform)
     gene.add_mrna(transcript)
 
@@ -194,7 +183,7 @@ def test_gene_gtf_strings_common_path_remains_genomic_ascending_on_minus_strand(
 
     feature_starts = [
         int(line.split("\t")[3])
-        for line in gene.gtfStrings().splitlines()
+        for line in gene.gtf_strings().splitlines()
         if line.split("\t")[2] in {RecordType.EXON.value, RecordType.CDS.value}
     ]
     assert feature_starts == sorted(feature_starts)
@@ -207,6 +196,17 @@ def test_exon_default_attributes_are_not_shared() -> None:
     exon_one.attributes["tag"] = "one"
 
     assert "tag" not in exon_two.attributes
+
+
+def test_transcript_regions_do_not_store_parent_backlinks() -> None:
+    gene = Gene("GENE1", None, 1, 100, "chr1", "+")
+    isoform = gm.Isoform("TX1", 1, 100, "chr1", "+")
+    exon = Exon(10, 20, "chr1", "+")
+
+    gene.add_isoform(isoform)
+    isoform.add_exon(exon)
+
+    assert not hasattr(exon, "parents")
 
 
 def test_gene_default_attributes_are_not_shared() -> None:
@@ -233,6 +233,8 @@ def test_basefeature_hash_matches_equality_contract() -> None:
 
 
 def test_load_gene_model_delegates_to_parser_boundary(monkeypatch: pytest.MonkeyPatch) -> None:
+    from SpliceGrapher.formats.parsers import gene_model_gff as parser_boundary
+
     model = GeneModel(None)
     records = ["chr1\tsrc\tgene\t1\t10\t.\t+\t.\tID=GENE1;Name=GENE1"]
     calls: dict[str, object] = {}
@@ -244,7 +246,7 @@ def test_load_gene_model_delegates_to_parser_boundary(monkeypatch: pytest.Monkey
         calls["records"] = gff_records_arg
         calls["kwargs"] = kwargs
 
-    monkeypatch.setattr(gm, "load_gene_model_records", _fake_loader)
+    monkeypatch.setattr(parser_boundary, "load_gene_model_records", _fake_loader)
 
     model.load_gene_model(records, verbose=True)
 
@@ -256,6 +258,20 @@ def test_load_gene_model_delegates_to_parser_boundary(monkeypatch: pytest.Monkey
         "verbose": True,
         "ignore_errors": False,
     }
+
+
+def test_load_gene_model_populates_mrna_parent_lookup() -> None:
+    model = GeneModel(None)
+    records = [
+        "chr1\tsrc\tgene\t1\t100\t.\t+\t.\tID=GENE1;Name=GENE1",
+        "chr1\tsrc\tmRNA\t1\t100\t.\t+\t.\tID=TX1;Parent=GENE1",
+    ]
+
+    model.load_gene_model(records)
+
+    parent = model.get_mrna_parent("chr1", "tx1")
+    assert parent is not None
+    assert parent.id == "GENE1"
 
 
 def test_write_gff_delegates_to_writer_boundary(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -285,7 +301,7 @@ def test_write_gff_delegates_to_writer_boundary(monkeypatch: pytest.MonkeyPatch)
 
     assert calls["model"] is model
     assert calls["path"] is out_stream
-    assert calls["gene_filter"] is gm.defaultGeneFilter
+    assert calls["gene_filter"] is gm.default_gene_filter
     assert calls["gene_set"] is None
     assert calls["verbose"] is True
 
@@ -315,7 +331,7 @@ def test_write_gtf_delegates_to_writer_boundary(monkeypatch: pytest.MonkeyPatch)
 
     assert calls["model"] is model
     assert calls["path"] is out_stream
-    assert calls["gene_filter"] is gm.defaultGeneFilter
+    assert calls["gene_filter"] is gm.default_gene_filter
     assert calls["verbose"] is True
 
 
@@ -383,7 +399,7 @@ def test_get_all_genes_keyword_is_supported() -> None:
     model.add_chromosome(1, 100, "chr1")
     model.add_gene(Gene("GENE1", None, 10, 20, "chr1", "+", name="GENE1"))
 
-    genes = model.get_all_genes(geneFilter=gm.defaultGeneFilter)
+    genes = model.get_all_genes(gene_filter=gm.default_gene_filter)
 
     assert [g.id for g in genes] == ["GENE1"]
 
@@ -394,4 +410,4 @@ def test_get_parent_keywords_are_supported() -> None:
     gene = Gene("GENE1", None, 10, 20, "chr1", "+", name="GENE1")
     model.add_gene(gene)
 
-    assert model.get_parent("GENE1", "chr1", searchGenes=True, searchmRNA=False) is gene
+    assert model.get_parent("GENE1", "chr1", search_genes=True, search_mrna=False) is gene
