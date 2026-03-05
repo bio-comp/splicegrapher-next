@@ -159,11 +159,12 @@ def stringToJunction(s):
     return jct
 
 
-def writeDepths(ostr, depthDict, jctDict={}, verbose=False):
+def writeDepths(ostr, depthDict, jctDict=None, verbose=False):
     """Writes read depths to a SpliceGrapher depth file.  Calling method
     must provide an output destination (file path or writeable stream),
     and read depths stored as a dictionary of chromosome ids mapped
     to lists of integer values."""
+    jctDict = {} if jctDict is None else jctDict
     if isinstance(ostr, (str, os.PathLike)):
         outStream = open(os.fspath(ostr), "w", encoding="utf-8")
         closeStream = True
@@ -201,9 +202,7 @@ def writeDepths(ostr, depthDict, jctDict={}, verbose=False):
 
         if c not in jctDict:
             continue
-        junctions = jctDict[c]
-        junctions.sort()
-        for j in junctions:
+        for j in sorted(jctDict[c]):
             indicator.update()
             outStream.write("%s\n" % j.toString())
     indicator.finish()
