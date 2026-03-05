@@ -317,7 +317,7 @@ class SplicedRead(Read):
     """
 
     def __init__(self, chromosome, p1, p2, p3, p4, sjCode, strand):
-        Read.__init__(self, chromosome, p1, p2, strand)
+        super().__init__(chromosome, p1, p2, strand)
 
         # NB: enforce pi < pj whenever i < j
         self.p3 = min(p3, p4)
@@ -393,7 +393,7 @@ class SpliceJunction(Read):
     """
 
     def __init__(self, chromosome, p1, p2, anchors, sjCode, strand):
-        Read.__init__(self, chromosome, p1, p2, strand)
+        super().__init__(chromosome, p1, p2, strand)
         self.code = JCT_CODE
         self.sjCode = sjCode
         self.anchors = anchors
@@ -464,7 +464,7 @@ class SpliceJunction(Read):
             or o.accval != self.accval
             or o.donval != self.donval
         ):
-            raise Exception("Splice sites do not match: %s <--> %s" % (o, self))
+            raise ValueError("Splice sites do not match: %s <--> %s" % (o, self))
 
         if o.code == SPLICE_CODE:
             self.count += o.count

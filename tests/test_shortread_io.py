@@ -44,6 +44,16 @@ def test_shortread_source_no_longer_uses_python2_object_bases() -> None:
     assert "class Cluster(object):" not in source
 
 
+def test_shortread_source_no_longer_uses_legacy_base_init_or_broad_exception() -> None:
+    shortread_path = (
+        Path(__file__).resolve().parents[1] / "SpliceGrapher" / "shared" / "ShortRead.py"
+    )
+    source = shortread_path.read_text(encoding="utf-8")
+
+    assert "Read.__init__(self," not in source
+    assert 'raise Exception("Splice sites do not match:' not in source
+
+
 @pytest.mark.parametrize("func_name", ["depthsToClusters", "readDepths"])
 def test_shortread_hot_path_signatures_are_explicit(func_name: str) -> None:
     signature = inspect.signature(getattr(shortread, func_name))
@@ -126,3 +136,11 @@ def test_write_depths_sorts_junctions_without_python2_cmp() -> None:
     junction_lines = [line for line in out_stream.getvalue().splitlines() if line.startswith("J\t")]
     assert len(junction_lines) == 2
     assert int(junction_lines[0].split("\t")[3]) < int(junction_lines[1].split("\t")[3])
+
+
+def test_splice_junction_update_mismatch_raises_value_error() -> None:
+    jct = SpliceJunction("chr1", 10, 20, (2, 2), shortread.KNOWN_JCT, "+")
+    other = SpliceJunction("chr1", 12, 20, (2, 2), shortread.KNOWN_JCT, "+")
+
+    with pytest.raises(ValueError, match="Splice sites do not match"):
+        jct.update(other)
