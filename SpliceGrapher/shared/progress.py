@@ -4,14 +4,19 @@ from __future__ import annotations
 
 import random
 import sys
+from collections.abc import Iterator, Sequence
+from typing import Generic, TypeVar
 
 from tqdm.auto import tqdm
 
+T = TypeVar("T")
 
-def _is_tty(stream) -> bool:
+
+def _is_tty(stream: object) -> bool:
     """Return True when a stream is interactive."""
     try:
-        return bool(stream.isatty())
+        isatty = getattr(stream, "isatty", None)
+        return bool(isatty and isatty())
     except Exception:
         return False
 
@@ -19,7 +24,12 @@ def _is_tty(stream) -> bool:
 class ProgressIndicator:
     """Compatibility wrapper around a tqdm progress bar."""
 
-    def __init__(self, increment, description="", verbose=True):
+    def __init__(
+        self,
+        increment: int,
+        description: str = "",
+        verbose: bool = True,
+    ) -> None:
         self.limit = max(1, int(increment))
         self.descr = description
         self.verbose = verbose
@@ -36,15 +46,15 @@ class ProgressIndicator:
             file=sys.stderr,
         )
 
-    def count(self):
+    def count(self) -> int:
         """Returns the current count."""
         return self.ctr
 
-    def finish(self):
+    def finish(self) -> None:
         """Finishes progress output."""
         self._bar.close()
 
-    def reset(self):
+    def reset(self) -> None:
         """Resets the indicator to be used again."""
         self.finish()
         self.ctr = 0
@@ -59,7 +69,7 @@ class ProgressIndicator:
             file=sys.stderr,
         )
 
-    def update(self):
+    def update(self) -> None:
         """Updates the indicator."""
         self.ctr += 1
         if not self.verbose:
@@ -67,24 +77,24 @@ class ProgressIndicator:
         self._bar.update(1)
 
 
-class RandomListIterator:
+class RandomListIterator(Generic[T], Iterator[T]):
     """
     Returns items at random, with replacement, from a list of values.
     For lists with more than ~1000 elements, this is about 30% more
     efficient than using random.sample() repeatedly.
     """
 
-    def __init__(self, values, **args):
+    def __init__(self, values: Sequence[T], *, seed: int | None = None) -> None:
         self.values = values
         self.rand = random.Random()
         self.limit = len(self.values) - 1
-        if "seed" in args:
-            self.rand.seed(args["seed"])
+        if seed is not None:
+            self.rand.seed(seed)
 
-    def __iter__(self):
+    def __iter__(self) -> RandomListIterator[T]:
         return self
 
-    def __next__(self):
+    def __next__(self) -> T:
         """Iterator implementation that returns a random value, with
         replacement, from a list."""
         i = self.rand.randint(0, self.limit)

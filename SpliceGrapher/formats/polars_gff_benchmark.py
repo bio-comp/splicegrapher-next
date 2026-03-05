@@ -5,10 +5,11 @@ from __future__ import annotations
 import hashlib
 import json
 import tracemalloc
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from time import perf_counter
-from typing import Callable, TypedDict
+from typing import TypedDict
 
 from SpliceGrapher.formats.gene_model import GeneModel
 from SpliceGrapher.formats.polars_gff import (
@@ -219,9 +220,9 @@ def _exon_records_from_gene_model(path: Path) -> list[tuple[str, str, int, int, 
     model = GeneModel(str(path), verbose=False)
     result: list[tuple[str, str, int, int, str]] = []
 
-    for gene in model.allGenes.values():
-        for exon in gene.exons:
-            for isoform in exon.parents:
+    for gene in model.all_genes.values():
+        for isoform in gene.isoforms.values():
+            for exon in isoform.exons:
                 result.append((exon.chromosome, exon.strand, exon.minpos, exon.maxpos, isoform.id))
 
     return result
@@ -737,13 +738,13 @@ def evaluation_to_markdown(evaluation: SingleCycleEvaluation) -> str:
 
 
 __all__ = [
-    "BenchmarkMetrics",
     "DEFAULT_DATASET_SIZES",
-    "GoNoGoDecision",
     "MEMORY_REGRESSION_THRESHOLD",
     "MIN_WINNING_DATASETS",
     "REQUIRED_REAL_DATASETS",
     "RUNTIME_SPEEDUP_THRESHOLD",
+    "BenchmarkMetrics",
+    "GoNoGoDecision",
     "SingleCycleEvaluation",
     "benchmark_end_to_end_gff_path",
     "benchmark_gff_path",

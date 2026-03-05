@@ -3,9 +3,10 @@ from __future__ import annotations
 import hashlib
 import tempfile
 from collections import defaultdict
-from collections.abc import Sequence
+from collections.abc import Iterator, Sequence
+from itertools import pairwise
 from pathlib import Path
-from typing import TypedDict
+from typing import TypedDict, cast
 
 import gffutils
 
@@ -13,14 +14,15 @@ from SpliceGrapher.core.enum_coercion import coerce_enum
 from SpliceGrapher.core.enums import AttrKey, RecordType
 from SpliceGrapher.formats.gene_model import (
     CDS,
-    FP_UTR,
-    TP_UTR,
     Exon,
+    FpUtr,
     Gene,
     GeneModel,
     Isoform,
-    featureSortKey,
-    mRNA,
+    Mrna,
+    TpUtr,
+    TranscriptRegion,
+    feature_sort_key,
 )
 
 GENE_FEATURE_TYPES = {RecordType.GENE, RecordType.PREDICTED_GENE, RecordType.PSEUDOGENE}
@@ -77,7 +79,7 @@ def _first_attr(feature: gffutils.Feature, keys: Sequence[str]) -> str | None:
     for key in keys:
         values = feature.attributes.get(key)
         if values:
-            return values[0]
+            return str(values[0])
     return None
 
 
@@ -94,9 +96,7 @@ def _stable_db_path(source_path: Path, cache_dir: Path | None) -> Path:
 
     cache_dir.mkdir(parents=True, exist_ok=True)
     digest = hashlib.sha256(
-        f"{source_path.resolve()}::{source_path.stat().st_mtime_ns}::{source_path.stat().st_size}".encode(
-            "utf-8"
-        )
+        f"{source_path.resolve()}::{source_path.stat().st_mtime_ns}::{source_path.stat().st_size}".encode()
     ).hexdigest()[:16]
     return cache_dir / f"annotation_{digest}.db"
 
@@ -308,9 +308,9 @@ def _build_gene_model_from_db(db: gffutils.FeatureDB) -> GeneModel:
         gene = _get_or_create_gene(model, gene_records, gene_id, chrom, strand, minpos, maxpos)
 
         iso_attr = {
-            AttrKey.PARENT: gene.id,
-            AttrKey.NAME: transcript_id,
-            AttrKey.ID: transcript_id,
+            str(AttrKey.PARENT): gene.id,
+            str(AttrKey.NAME): transcript_id,
+            str(AttrKey.ID): transcript_id,
         }
         isoform = Isoform(transcript_id, minpos, maxpos, chrom, strand, attr=iso_attr)
         for exon_feature in exons:
@@ -325,13 +325,14 @@ def _build_gene_model_from_db(db: gffutils.FeatureDB) -> GeneModel:
 
         if cds_records:
             mrna_attr = {
-                AttrKey.PARENT: gene.id,
-                AttrKey.NAME: transcript_id,
-                AttrKey.ID: transcript_id,
+                str(AttrKey.PARENT): gene.id,
+                str(AttrKey.NAME): transcript_id,
+                str(AttrKey.ID): transcript_id,
             }
-            mrna_record = mRNA(transcript_id, minpos, maxpos, chrom, strand, attr=mrna_attr)
+            mrna_record = Mrna(transcript_id, minpos, maxpos, chrom, strand, attr=mrna_attr)
             for cds_feature in cds_records:
                 feature_type = _normalize_feature_type(cds_feature.featuretype)
+                cds: TranscriptRegion
                 if feature_type == RecordType.CDS:
                     cds = CDS(
                         cds_feature.start,
@@ -341,7 +342,7 @@ def _build_gene_model_from_db(db: gffutils.FeatureDB) -> GeneModel:
                         _feature_attr_map(cds_feature),
                     )
                 elif feature_type == RecordType.FIVE_PRIME_UTR:
-                    cds = FP_UTR(
+                    cds = FpUtr(
                         cds_feature.start,
                         cds_feature.end,
                         chrom,
@@ -349,7 +350,7 @@ def _build_gene_model_from_db(db: gffutils.FeatureDB) -> GeneModel:
                         _feature_attr_map(cds_feature),
                     )
                 elif feature_type == RecordType.THREE_PRIME_UTR:
-                    cds = TP_UTR(
+                    cds = TpUtr(
                         cds_feature.start,
                         cds_feature.end,
                         chrom,
@@ -364,15 +365,15 @@ def _build_gene_model_from_db(db: gffutils.FeatureDB) -> GeneModel:
     return model
 
 
-def _iter_transcript_exons(gene: Gene):
+def _iter_transcript_exons(gene: Gene) -> Iterator[tuple[str, list[Exon]]]:
     """Yield transcript IDs and sorted exon lists for intron derivation."""
     for iso in gene.isoforms.values():
-        exons = sorted(iso.exons, key=featureSortKey)
+        exons = sorted(iso.exons, key=feature_sort_key)
         if len(exons) > 1:
             yield iso.id, exons
 
     for mrna_rec in gene.mrna.values():
-        exons = sorted(mrna_rec.sortedExons(), key=featureSortKey)
+        exons = sorted(mrna_rec.sorted_exons(), key=feature_sort_key)
         if len(exons) > 1:
             yield mrna_rec.id, exons
 
@@ -390,7 +391,7 @@ def write_intron_cache(model: GeneModel, outdir: str | Path) -> Path:
             key=lambda g: (g.chromosome, g.minpos, g.maxpos, g.id),
         ):
             for transcript_id, exons in _iter_transcript_exons(gene):
-                for intron_index, (left, right) in enumerate(zip(exons[:-1], exons[1:]), start=1):
+                for intron_index, (left, right) in enumerate(pairwise(exons), start=1):
                     intron_start = left.maxpos + 1
                     intron_end = right.minpos - 1
                     if intron_start > intron_end:
@@ -404,17 +405,17 @@ def write_intron_cache(model: GeneModel, outdir: str | Path) -> Path:
     return cache_path
 
 
-def load_gene_models(path: str, **args) -> GeneModel:
+def load_gene_models(path: str, **args: object) -> GeneModel:
     """Load GTF/GFF annotations through gffutils and return a ``GeneModel``."""
     model_path = Path(path)
     if not model_path.exists():
         raise ValueError(f"Gene model file not found: {path}")
 
-    cache_dir = args.get("cache_dir")
+    cache_dir = cast(str | Path | None, args.get("cache_dir"))
     db = _create_db(model_path, Path(cache_dir) if cache_dir else None)
     model = _build_gene_model_from_db(db)
 
-    outdir = args.get("outdir")
+    outdir = cast(str | Path | None, args.get("outdir"))
     if outdir:
         write_intron_cache(model, outdir)
 
