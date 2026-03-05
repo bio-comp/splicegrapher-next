@@ -81,6 +81,11 @@ def test_write_depths_accepts_text_io_stream() -> None:
     assert "D\tchr1\t" in payload
 
 
+def test_write_depths_uses_non_mutable_default_for_junction_map() -> None:
+    signature = inspect.signature(shortread.writeDepths)
+    assert signature.parameters["jctDict"].default is None
+
+
 def test_shortread_read_objects_sort_by_chromosome_and_coordinates() -> None:
     reads = [
         Read("chr2", 10, 12, "+"),
@@ -117,6 +122,7 @@ def test_write_depths_sorts_junctions_without_python2_cmp() -> None:
         verbose=False,
     )
 
+    assert [j.minpos for j in [jct_late, jct_early]] == [30, 10]
     junction_lines = [line for line in out_stream.getvalue().splitlines() if line.startswith("J\t")]
     assert len(junction_lines) == 2
     assert int(junction_lines[0].split("\t")[3]) < int(junction_lines[1].split("\t")[3])
