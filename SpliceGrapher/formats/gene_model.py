@@ -83,6 +83,63 @@ feature_contains = _models.feature_contains
 feature_search = _models.feature_search
 
 
+class GeneModelRepository:
+    """Serialization boundary for loading and writing ``GeneModel`` payloads."""
+
+    @staticmethod
+    def load(
+        model: GeneModel,
+        gff_records: GffRecordSource,
+        *,
+        require_notes: bool = False,
+        chromosomes: Sequence[str] | str | None = None,
+        verbose: bool = False,
+        ignore_errors: bool = False,
+    ) -> None:
+        from SpliceGrapher.formats.parsers.gene_model_gff import load_gene_model_records
+
+        load_gene_model_records(
+            model,
+            gff_records,
+            require_notes=require_notes,
+            chromosomes=chromosomes,
+            verbose=verbose,
+            ignore_errors=ignore_errors,
+        )
+
+    @staticmethod
+    def write_gff(
+        model: GeneModel,
+        gff_path: str | TextIO,
+        *,
+        gene_filter: GeneFilter = default_gene_filter,
+        gene_set: set[str] | list[str] | tuple[str, ...] | None = None,
+        verbose: bool = False,
+    ) -> None:
+        write_gene_model_gff(
+            model,
+            gff_path,
+            gene_filter=gene_filter,
+            gene_set=gene_set,
+            verbose=verbose,
+        )
+
+    @staticmethod
+    def write_gtf(
+        model: GeneModel,
+        gtf_path: str | TextIO,
+        *,
+        gene_filter: GeneFilter = default_gene_filter,
+        verbose: bool = False,
+    ) -> None:
+        write_gene_model_gtf(
+            model,
+            gtf_path,
+            gene_filter=gene_filter,
+            verbose=verbose,
+        )
+
+
 @dataclass(slots=True)
 class GeneModel:
     gff_path: GffRecordSource | None
@@ -423,9 +480,7 @@ class GeneModel:
           'verbose'      - provide verbose feedback (default=False)
           'ignore_errors' - ignore error conditions (default=False)
         """
-        from SpliceGrapher.formats.parsers.gene_model_gff import load_gene_model_records
-
-        load_gene_model_records(
+        GeneModelRepository.load(
             self,
             gff_records,
             require_notes=require_notes,
@@ -448,7 +503,7 @@ class GeneModel:
         verbose: bool = False,
     ) -> None:
         """Writes a complete gene model out to a GFF file."""
-        write_gene_model_gff(
+        GeneModelRepository.write_gff(
             self,
             gff_path,
             gene_filter=gene_filter,
@@ -464,7 +519,7 @@ class GeneModel:
         verbose: bool = False,
     ) -> None:
         """Writes a complete gene model out to a GTF file."""
-        write_gene_model_gtf(
+        GeneModelRepository.write_gtf(
             self,
             gtf_path,
             gene_filter=gene_filter,
