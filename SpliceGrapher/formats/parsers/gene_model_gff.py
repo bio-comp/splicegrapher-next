@@ -143,6 +143,24 @@ def _annotation_value(annots: Mapping[str, str], key: object) -> str | None:
     return annots.get(str(key))
 
 
+def _known_chromosomes(mapping: Mapping[str, object]) -> str:
+    return ",".join(mapping.keys())
+
+
+def _has_chromosome(
+    ctx: ParseContext,
+    record: ParsedRecord,
+    mapping: Mapping[str, object],
+    *,
+    fail_message: str | None = None,
+) -> bool:
+    if record.chrom in mapping:
+        return True
+    if fail_message is not None:
+        ctx.fail(fail_message)
+    return False
+
+
 def _normalize_chromosomes(chromosomes: Sequence[str] | str | None) -> set[str] | None:
     if chromosomes is None:
         return None
@@ -155,6 +173,10 @@ def _clean_name(value: str) -> str:
     revised = unquote(value)
     revised = revised.replace(",", "")
     return revised.replace(" ", "-")
+
+
+def _parent_annotation(record: ParsedRecord) -> str | None:
+    return _annotation_value(record.annots, model_domain.PARENT_FIELD)
 
 
 def _parse_annotations(annotation_string: str) -> dict[str, str]:
@@ -460,7 +482,7 @@ def _resolve_isoform(
 
 
 def _handle_exon_record(ctx: ParseContext, record: ParsedRecord) -> None:
-    if record.chrom not in ctx.model.model:
+    if not _has_chromosome(ctx, record, ctx.model.model):
         return
 
     gene_obj = _resolve_exon_parent(ctx, record)
@@ -511,11 +533,15 @@ def _resolve_mrna_gene(
 
 
 def _handle_mrna_record(ctx: ParseContext, record: ParsedRecord) -> None:
-    if record.chrom not in ctx.model.model:
-        ctx.fail(
+    if not _has_chromosome(
+        ctx,
+        record,
+        ctx.model.model,
+        fail_message=(
             f"line {record.line_no}: Mrna with missing chromosome dictionary {record.chrom} "
-            f"(known: {','.join(ctx.model.model.keys())})"
-        )
+            f"(known: {_known_chromosomes(ctx.model.model)})"
+        ),
+    ):
         return
 
     transcript_id = _annotation_value(record.annots, model_domain.ID_FIELD)
@@ -524,7 +550,7 @@ def _handle_mrna_record(ctx: ParseContext, record: ParsedRecord) -> None:
         return
     transcript_id = transcript_id.upper()
 
-    parent_id = _annotation_value(record.annots, model_domain.PARENT_FIELD)
+    parent_id = _parent_annotation(record)
     if parent_id is None:
         return
 
@@ -575,20 +601,28 @@ def _handle_mrna_record(ctx: ParseContext, record: ParsedRecord) -> None:
 
 
 def _handle_transcript_region_record(ctx: ParseContext, record: ParsedRecord) -> None:
-    if record.chrom not in ctx.model.model:
-        ctx.fail(
+    if not _has_chromosome(
+        ctx,
+        record,
+        ctx.model.model,
+        fail_message=(
             f"line {record.line_no}: {record.rec_type} has unrecognized chromosome: "
-            f"{record.chrom} (known: {','.join(ctx.model.model.keys())})"
-        )
+            f"{record.chrom} (known: {_known_chromosomes(ctx.model.model)})"
+        ),
+    ):
         return
-    if record.chrom not in ctx.model.mrna_forms:
-        ctx.fail(
+    if not _has_chromosome(
+        ctx,
+        record,
+        ctx.model.mrna_forms,
+        fail_message=(
             f"line {record.line_no}: {record.rec_type} has unrecognized chromosome: "
-            f"{record.chrom} (known: {','.join(ctx.model.mrna_forms.keys())})"
-        )
+            f"{record.chrom} (known: {_known_chromosomes(ctx.model.mrna_forms)})"
+        ),
+    ):
         return
 
-    parent_id = _annotation_value(record.annots, model_domain.PARENT_FIELD)
+    parent_id = _parent_annotation(record)
     if parent_id is None:
         return
     mrna_record = _resolve_parent(ctx, parent_id, record.chrom, search_genes=False)
@@ -638,9 +672,9 @@ def _extract_parent_gene_id(parent_id: str) -> str | None:
 
 
 def _handle_misc_feature_record(ctx: ParseContext, record: ParsedRecord) -> None:
-    if record.chrom not in ctx.model.model:
+    if not _has_chromosome(ctx, record, ctx.model.model):
         return
-    parent_value = _annotation_value(record.annots, model_domain.PARENT_FIELD)
+    parent_value = _parent_annotation(record)
     if parent_value is None:
         return
     parent_gene_id = _extract_parent_gene_id(parent_value)
