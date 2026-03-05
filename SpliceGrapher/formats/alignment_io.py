@@ -11,11 +11,8 @@ import numpy
 import pysam
 import structlog
 
-from SpliceGrapher.formats.shortread_compat import (
-    SpliceJunction,
-    is_depths_file,
-    read_depths,
-)
+from SpliceGrapher.formats.depth_io import is_depths_file, read_depths
+from SpliceGrapher.formats.junction import SpliceJunction, parse_junction_record
 
 LOGGER = structlog.get_logger(__name__)
 
@@ -301,7 +298,9 @@ def _ensure_depth_capacity(depth_array: numpy.ndarray, required_size: int) -> nu
     return expanded
 
 
-def _depth_map_to_arrays(depths: dict[str, list[int] | numpy.ndarray]) -> dict[str, numpy.ndarray]:
+def _depth_map_to_arrays(
+    depths: dict[str, list[int] | numpy.ndarray],
+) -> dict[str, numpy.ndarray]:
     """Normalize depth maps to int32 NumPy arrays."""
     return {
         chrom: numpy.asarray(chrom_depths, dtype=numpy.int32)
@@ -518,6 +517,7 @@ def getSamDepths(
     if _is_depths_source(samRecords):
         depths, _ = read_depths(
             samRecords,
+            parse_junction=parse_junction_record,
             maxpos=maxpos,
             junctions=False,
             verbose=verbose,
@@ -568,6 +568,7 @@ def getSamJunctions(
     if _is_depths_source(samRecords):
         _, jcts = read_depths(
             samRecords,
+            parse_junction=parse_junction_record,
             maxpos=maxpos,
             minanchor=minanchor,
             minjct=minjct,
@@ -603,6 +604,7 @@ def getSamReadData(
     if _is_depths_source(samRecords):
         depths, jcts = read_depths(
             samRecords,
+            parse_junction=parse_junction_record,
             maxpos=maxpos,
             minanchor=minanchor,
             minjct=minjct,

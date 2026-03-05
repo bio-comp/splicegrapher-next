@@ -1,4 +1,4 @@
-"""Parity tests for extracted SGN depth record I/O helpers."""
+"""Parity tests for SGN depth record I/O helpers."""
 
 from __future__ import annotations
 
@@ -21,14 +21,12 @@ def _junction_signature(junction: object) -> tuple[object, ...]:
     )
 
 
-def test_depth_io_is_depths_file_matches_shortread_behavior() -> None:
+def test_depth_io_is_depths_file_accepts_seekable_stream() -> None:
     from SpliceGrapher.formats.depth_io import is_depths_file
-    from SpliceGrapher.shared.ShortRead import isDepthsFile
 
     stream = io.StringIO("C\tchr1\t3\nD\tchr1\t1:0,2:2\n")
 
     assert is_depths_file(stream) is True
-    assert isDepthsFile(stream) is True
     assert stream.tell() == 0
 
 
@@ -56,17 +54,12 @@ def test_depth_io_is_depths_file_rejects_unseekable_stream_without_consuming() -
     assert stream.readline() == "C\tchr1\t3\n"
 
 
-def test_depth_io_read_depths_matches_legacy_parser(tmp_path: Path) -> None:
+def test_depth_io_read_depths_parses_junction_records(tmp_path: Path) -> None:
     from SpliceGrapher.formats.depth_io import read_depths
-    from SpliceGrapher.shared.ShortRead import (
-        KNOWN_JCT,
-        SpliceJunction,
-        readDepths,
-        stringToJunction,
-    )
+    from SpliceGrapher.formats.junction import SpliceJunction, parse_junction_record
 
     depths_path = tmp_path / "junction.depths"
-    junction = SpliceJunction("chr1", 2, 5, (2, 3), KNOWN_JCT, "+")
+    junction = SpliceJunction("chr1", 2, 5, (2, 3), "K", "+")
     junction.count = 7
     depths_path.write_text(
         "\n".join(
@@ -80,31 +73,44 @@ def test_depth_io_read_depths_matches_legacy_parser(tmp_path: Path) -> None:
         encoding="utf-8",
     )
 
-    legacy_depths, legacy_junctions = readDepths(depths_path)
-    new_depths, new_junctions = read_depths(depths_path, parse_junction=stringToJunction)
+    depth_map, junction_map = read_depths(depths_path, parse_junction=parse_junction_record)
 
-    assert new_depths.keys() == legacy_depths.keys()
-    for chrom in new_depths:
-        assert numpy.array_equal(new_depths[chrom], numpy.asarray(legacy_depths[chrom]))
-    assert sorted(_junction_signature(j) for j in new_junctions["chr1"]) == sorted(
-        _junction_signature(j) for j in legacy_junctions["chr1"]
+    assert set(depth_map) == {"chr1"}
+    assert numpy.array_equal(
+        depth_map["chr1"], numpy.array([0, 0, 2, 2, 2, 0, 0, 0], dtype=numpy.int32)
+    )
+    assert sorted(_junction_signature(j) for j in junction_map["chr1"]) == sorted(
+        [_junction_signature(junction)]
     )
 
 
 def test_depth_io_read_depths_respects_maxpos_without_extending_depth_array() -> None:
     from SpliceGrapher.formats.depth_io import read_depths
-    from SpliceGrapher.shared.ShortRead import stringToJunction
+    from SpliceGrapher.formats.junction import parse_junction_record
 
     stream = io.StringIO("C\tchr1\t10\nD\tchr1\t10:5\n")
 
     depths, junctions = read_depths(
         stream,
+        parse_junction=parse_junction_record,
         maxpos=3,
         junctions=False,
-        parse_junction=stringToJunction,
     )
 
     assert "chr1" in depths
     assert len(depths["chr1"]) == 3
     assert numpy.array_equal(depths["chr1"], numpy.array([5, 5, 5], dtype=numpy.int32))
     assert junctions == {}
+
+
+def test_depth_io_requires_junction_parser_when_junctions_enabled() -> None:
+    from SpliceGrapher.formats.depth_io import read_depths
+
+    stream = io.StringIO("C\tchr1\t3\nD\tchr1\t1:0,2:2\n")
+
+    try:
+        read_depths(stream)
+    except ValueError as exc:
+        assert "parse_junction is required" in str(exc)
+    else:
+        raise AssertionError("Expected ValueError when parse_junction is missing")

@@ -22,8 +22,11 @@ DepthSource: TypeAlias = str | PathLike[str] | TextIO | BinaryIO
 class JunctionRecord(Protocol):
     """Minimum protocol needed to filter parsed junction records."""
 
-    count: int
-    minpos: int
+    @property
+    def count(self) -> int: ...
+
+    @property
+    def minpos(self) -> int: ...
 
     def minAnchor(self) -> int: ...  # noqa: N802
 
