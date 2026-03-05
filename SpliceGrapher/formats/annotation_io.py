@@ -216,7 +216,7 @@ def _get_or_create_gene(
         rec["name"],
         rec["attrs"],
     )
-    model.addGene(gene)
+    model.add_gene(gene)
     return gene
 
 
@@ -272,7 +272,7 @@ def _build_gene_model_from_db(db: gffutils.FeatureDB) -> GeneModel:
                 transcript_gene.setdefault(transcript_id, maybe_gene)
 
     for chrom, maxpos in chrom_max.items():
-        model.addChromosome(1, maxpos, chrom)
+        model.add_chromosome(1, maxpos, chrom)
 
     all_transcripts = sorted(
         set(exon_groups.keys()) | set(cds_groups.keys()) | set(transcript_meta.keys())
@@ -321,7 +321,7 @@ def _build_gene_model_from_db(db: gffutils.FeatureDB) -> GeneModel:
                 strand,
                 _feature_attr_map(exon_feature),
             )
-            gene.addExon(isoform, exon)
+            gene.add_exon(isoform, exon)
 
         if cds_records:
             mrna_attr = {
@@ -358,9 +358,9 @@ def _build_gene_model_from_db(db: gffutils.FeatureDB) -> GeneModel:
                     )
                 else:
                     continue
-                gene.addCDS(mrna_record, cds)
+                gene.add_cds(mrna_record, cds)
 
-    model.makeSortedModel()
+    model.make_sorted_model()
     return model
 
 
@@ -386,7 +386,7 @@ def write_intron_cache(model: GeneModel, outdir: str | Path) -> Path:
 
     with cache_path.open("w", encoding="utf-8") as handle:
         for gene in sorted(
-            model.getAllGenes(),
+            model.get_all_genes(),
             key=lambda g: (g.chromosome, g.minpos, g.maxpos, g.id),
         ):
             for transcript_id, exons in _iter_transcript_exons(gene):

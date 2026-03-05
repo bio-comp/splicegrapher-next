@@ -8,7 +8,7 @@ import pytest
 
 from SpliceGrapher.core.enums import RecordType, Strand
 from SpliceGrapher.formats import GeneModel as gm
-from SpliceGrapher.formats.GeneModel import Exon, Gene, GeneModel, feature_search, featureSearch
+from SpliceGrapher.formats.GeneModel import Exon, Gene, GeneModel, feature_search
 
 
 @dataclass
@@ -29,13 +29,13 @@ def test_feature_search_supports_recursive_midpoint_indexing() -> None:
     ]
     query = Exon(21, 22, "chr1", "+")
 
-    assert featureSearch(features, query) is features[1]
+    assert feature_search(features, query) is features[1]
 
 
 def test_mrna_sorted_exons_uses_explicit_minintron_keyword() -> None:
     transcript = gm.mRNA("tx1", 1, 20, "chr1", "+")
-    transcript.addCDS(gm.CDS(1, 5, "chr1", "+"))
-    transcript.addCDS(gm.CDS(7, 10, "chr1", "+"))
+    transcript.add_cds(gm.CDS(1, 5, "chr1", "+"))
+    transcript.add_cds(gm.CDS(7, 10, "chr1", "+"))
 
     merged = transcript.sortedExons(minintron=3)
     unmerged = transcript.sortedExons(minintron=2)
@@ -128,14 +128,6 @@ def test_load_gene_model_rejects_unknown_record_type() -> None:
         model.load_gene_model(records)
 
 
-def test_legacy_camel_case_method_aliases_remain_available() -> None:
-    model = GeneModel(None)
-    assert model.addChromosome is not None
-    assert model.loadGeneModel is not None
-    assert model.makeSortedModel is not None
-    assert model.writeGFF is not None
-
-
 def test_gene_model_record_type_collections_are_enum_backed() -> None:
     assert all(isinstance(item, RecordType) for item in gm.KNOWN_RECTYPES)
     assert all(isinstance(item, RecordType) for item in gm.IGNORE_RECTYPES)
@@ -149,6 +141,63 @@ def test_gene_model_alias_mapping_uses_recordtype_domain() -> None:
 
 def test_gene_model_valid_strands_uses_enum_domain() -> None:
     assert gm.VALID_STRANDS == set(Strand)
+
+
+def test_gene_model_gtf_policy_and_splice_offset_contract_constants() -> None:
+    assert gm.GTF_ORDER_POLICY == "genomic_ascending"
+    assert gm.SPLICE_DIMER_OFFSET == 2
+
+
+def test_exon_splice_site_offset_contract_is_explicit_for_both_strands() -> None:
+    plus_exon = Exon(10, 20, "chr1", "+")
+    minus_exon = Exon(10, 20, "chr1", "-")
+
+    assert plus_exon.acceptor() == 10 - gm.SPLICE_DIMER_OFFSET
+    assert plus_exon.donor() == 20
+    assert minus_exon.acceptor() == 20
+    assert minus_exon.donor() == 10 - gm.SPLICE_DIMER_OFFSET
+
+
+def test_isoform_gtf_strings_remain_genomic_ascending_on_minus_strand() -> None:
+    gene = Gene("GENE1", None, 1, 200, "chr1", "-", name="GENE1")
+    isoform = gm.Isoform("TX1", 1, 200, "chr1", "-")
+    isoform.setParent(gene)
+    isoform.add_exon(Exon(80, 90, "chr1", "-"))
+    isoform.add_exon(Exon(20, 30, "chr1", "-"))
+
+    starts = [int(line.split("\t")[3]) for line in isoform.gtfStrings()]
+    assert starts == [20, 80]
+
+
+def test_mrna_gtf_strings_remain_genomic_ascending_on_minus_strand() -> None:
+    gene = Gene("GENE1", None, 1, 200, "chr1", "-", name="GENE1")
+    transcript = gm.mRNA("TX1", 1, 200, "chr1", "-")
+    transcript.parent = gene
+    transcript.add_cds(gm.CDS(80, 90, "chr1", "-"))
+    transcript.add_cds(gm.CDS(20, 30, "chr1", "-"))
+
+    cds_starts = [int(line.split("\t")[3]) for line in transcript.gtfStrings()]
+    assert cds_starts == [20, 80]
+
+
+def test_gene_gtf_strings_common_path_remains_genomic_ascending_on_minus_strand() -> None:
+    gene = Gene("GENE1", None, 1, 200, "chr1", "-", name="GENE1")
+    isoform = gm.Isoform("TX1", 1, 200, "chr1", "-")
+    transcript = gm.mRNA("TX1", 1, 200, "chr1", "-")
+    gene.add_isoform(isoform)
+    gene.add_mrna(transcript)
+
+    isoform.add_exon(Exon(70, 75, "chr1", "-"))
+    isoform.add_exon(Exon(20, 30, "chr1", "-"))
+    transcript.add_cds(gm.CDS(80, 90, "chr1", "-"))
+    transcript.add_cds(gm.CDS(25, 35, "chr1", "-"))
+
+    feature_starts = [
+        int(line.split("\t")[3])
+        for line in gene.gtfStrings().splitlines()
+        if line.split("\t")[2] in {RecordType.EXON.value, RecordType.CDS.value}
+    ]
+    assert feature_starts == sorted(feature_starts)
 
 
 def test_exon_default_attributes_are_not_shared() -> None:
@@ -329,20 +378,20 @@ def test_load_gene_model_resolves_delimited_parent_ids_in_parser_layer() -> None
     assert "TX1" in gene.isoforms
 
 
-def test_legacy_get_all_genes_keyword_is_supported() -> None:
+def test_get_all_genes_keyword_is_supported() -> None:
     model = GeneModel(None)
     model.add_chromosome(1, 100, "chr1")
     model.add_gene(Gene("GENE1", None, 10, 20, "chr1", "+", name="GENE1"))
 
-    genes = model.getAllGenes(geneFilter=gm.defaultGeneFilter)
+    genes = model.get_all_genes(geneFilter=gm.defaultGeneFilter)
 
     assert [g.id for g in genes] == ["GENE1"]
 
 
-def test_legacy_get_parent_keywords_are_supported() -> None:
+def test_get_parent_keywords_are_supported() -> None:
     model = GeneModel(None)
     model.add_chromosome(1, 100, "chr1")
     gene = Gene("GENE1", None, 10, 20, "chr1", "+", name="GENE1")
     model.add_gene(gene)
 
-    assert model.getParent("GENE1", "chr1", searchGenes=True, searchmRNA=False) is gene
+    assert model.get_parent("GENE1", "chr1", searchGenes=True, searchmRNA=False) is gene

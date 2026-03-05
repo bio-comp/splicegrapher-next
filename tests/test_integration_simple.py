@@ -25,7 +25,7 @@ def test_happy_path_load_union_write_cycle(tmp_path: Path) -> None:
     # Annotation path: load normalized gene model and ensure write roundtrip works.
     model = load_gene_models(str(fixture.gff3))
     model_out = tmp_path / "annotation.roundtrip.gff3"
-    model.writeGFF(str(model_out))
+    model.write_gff(str(model_out))
     model_text = model_out.read_text(encoding="utf-8")
     assert "\tgene\t" in model_text
     assert "\texon\t" in model_text

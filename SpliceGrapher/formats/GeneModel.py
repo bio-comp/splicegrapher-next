@@ -98,6 +98,14 @@ FORM_DELIMITERS = [".", "-", "_", ","]
 GENE_SEARCH_RANGE = 16
 GENE_SEARCH_MARGIN = 8
 
+# GeneModel splice-site helpers assume canonical GT/AG-style 2nt dimer boundaries.
+# This remains a compatibility contract for existing callers and fixtures.
+SPLICE_DIMER_OFFSET = 2
+
+# GTF serialization contract: emit records in genomic coordinate order for both
+# strands (ascending minpos, then maxpos) to preserve historical output shape.
+GTF_ORDER_POLICY = "genomic_ascending"
+
 GeneFilter = Callable[["Gene"], bool]
 GffRecordSource = str | list[str] | set[str] | tuple[str, ...]
 AttrT = TypeVar("AttrT")
@@ -112,22 +120,22 @@ class GeneLike(Protocol):
     def contains(self, pos: int, strand: str) -> bool: ...
 
 
-def gene_type_filter(g: "Gene") -> bool:
+def gene_type_filter(g: Gene) -> bool:
     """Convenience filter for getting only 'gene' records."""
     return g.featureType == RecordType.GENE
 
 
-def defaultGeneFilter(g: "Gene") -> bool:
+def defaultGeneFilter(g: Gene) -> bool:
     """Default function for filtering genes from a list."""
     return True
 
 
-def dictToGFF(d: dict[str, object]) -> str:
+def dict_to_gff(d: dict[str, object]) -> str:
     """Returns a string representation of a dictionary based on the GFF3 annotation format."""
     return ";".join(["{}={}".format(k, v) for k, v in sorted(d.items()) if k != "parent"])
 
 
-def dictToGTF(d: dict[str, object]) -> str:
+def dict_to_gtf(d: dict[str, object]) -> str:
     """Returns a string representation of a dictionary based on the GTF annotation format."""
     return "; ".join(['{} "{}"'.format(k, v) for k, v in sorted(d.items()) if k != "parent"])
 
@@ -139,7 +147,7 @@ def cdsFactory(
     chrName: str,
     strand: str,
     attr: dict[str, str] | None = None,
-) -> "CDS":
+) -> CDS:
     """Simple factory method for creating CDS-type records."""
     attr = {} if attr is None else attr
     if recType == RecordType.CDS:
@@ -152,7 +160,7 @@ def cdsFactory(
         raise ValueError("Illegal CDS record type: {}".format(recType))
 
 
-class Chromosome(object):
+class Chromosome:
     """Class that encapsulates a chromosome GFF record."""
 
     def __init__(self, start: int, end: int, name: str) -> None:
@@ -183,7 +191,7 @@ class Chromosome(object):
     def start(self) -> int:
         return self.minpos
 
-    def update(self, feature: "BaseFeature") -> None:
+    def update(self, feature: BaseFeature) -> None:
         """
         Many species do not have 'chromosome' entries in their annotations,
         so we must infer chromosome boundaries from observed features.
@@ -196,7 +204,7 @@ class Chromosome(object):
         self.maxpos = max(self.maxpos, feature.maxpos)
 
 
-def featureCmp(a: "BaseFeature", b: "BaseFeature") -> int:
+def featureCmp(a: BaseFeature, b: BaseFeature) -> int:
     """
     General comparison function for sorting any features that have 'minpos'
     and 'maxpos' attributes.
@@ -207,17 +215,22 @@ def featureCmp(a: "BaseFeature", b: "BaseFeature") -> int:
         return a.minpos - b.minpos
 
 
-def featureSortKey(feature: "BaseFeature") -> tuple[int, int]:
+def featureSortKey(feature: BaseFeature) -> tuple[int, int]:
     """Sort features by genomic interval."""
     return (feature.minpos, feature.maxpos)
 
 
-def geneSortKey(gene: "Gene") -> tuple[int, int, str]:
+def geneSortKey(gene: Gene) -> tuple[int, int, str]:
     """Sort genes by interval, then id for deterministic ties."""
     return (gene.minpos, gene.maxpos, gene.id)
 
 
-def featureOverlaps(a: "BaseFeature | None", b: "BaseFeature | None") -> bool:
+def gtf_feature_sort_key(feature: BaseFeature) -> tuple[int, int]:
+    """Sort key for GTF emission using the genomic-ascending compatibility policy."""
+    return featureSortKey(feature)
+
+
+def featureOverlaps(a: BaseFeature | None, b: BaseFeature | None) -> bool:
     """
     General function for determining whether feature 'a' and feature 'b' overlap.
     """
@@ -226,7 +239,7 @@ def featureOverlaps(a: "BaseFeature | None", b: "BaseFeature | None") -> bool:
     return intervals_overlap(a, b)
 
 
-def featureContains(a: "BaseFeature | None", b: "BaseFeature | None") -> bool:
+def featureContains(a: BaseFeature | None, b: BaseFeature | None) -> bool:
     """
     General function for determining whether feature 'a' contains
     feature 'b'.  Note that both features must have 'minpos'
@@ -238,12 +251,12 @@ def featureContains(a: "BaseFeature | None", b: "BaseFeature | None") -> bool:
 
 
 def feature_search(
-    features: Sequence["BaseFeature"],
-    query: "BaseFeature",
+    features: Sequence[BaseFeature],
+    query: BaseFeature,
     lo: int = 0,
     hi: int | None = None,
     overlap_window: int = 8,
-) -> "BaseFeature":
+) -> BaseFeature:
     """
     Bisect-based search through a sorted feature list.
 
@@ -270,17 +283,7 @@ def feature_search(
     )
 
 
-def featureSearch(
-    features: Sequence["BaseFeature"],
-    query: "BaseFeature",
-    lo: int = 0,
-    hi: int | None = None,
-) -> "BaseFeature":
-    """Compatibility wrapper for ``feature_search``."""
-    return feature_search(features, query, lo=lo, hi=hi)
-
-
-class BaseFeature(object):
+class BaseFeature:
     def __init__(self, featureType, start, end, chromosome, strand, attr=None):
         self.chromosome = chromosome
         self.strand = strand
@@ -292,13 +295,15 @@ class BaseFeature(object):
 
     def acceptor(self):
         """
-        Returns the location where the acceptor dimer begins: 2nt
-        upstream of the exon start position.  This is 2 before the
-        start on the + strand and the exact start on the - strand.
+        Returns the location where the acceptor dimer begins.
+
+        Contract: use canonical splice-dimer assumptions with 1-based
+        chromosome coordinates. On '+' this is exon-start minus 2 nt.
+        On '-' this is the exact exon-start.
           + Example: AG|CGTATTC
           - Example: GAATACG|CT (reverse-complement)
         """
-        return self.start() - 2 if self.strand == "+" else self.start()
+        return self.start() - SPLICE_DIMER_OFFSET if self.strand == "+" else self.start()
 
     def __lt__(self, other: object) -> bool:
         if not isinstance(other, BaseFeature):
@@ -320,12 +325,15 @@ class BaseFeature(object):
 
     def donor(self):
         """
-        Returns the location where the donor dimer begins: at the
-        end of the exon.  This is 2 nt before the start on the - strand.
+        Returns the location where the donor dimer begins.
+
+        Contract: use canonical splice-dimer assumptions with 1-based
+        chromosome coordinates. On '+' this is the exon end. On '-'
+        this is exon-end minus 2 nt.
           + strand example: CGTATTC|GT
           - strand example: AC|GAATACG
         """
-        return self.end() if self.strand == "+" else self.end() - 2
+        return self.end() if self.strand == "+" else self.end() - SPLICE_DIMER_OFFSET
 
     def end(self):
         return self.maxpos if self.strand == "+" else self.minpos
@@ -351,7 +359,7 @@ class BaseFeature(object):
             self.minpos,
             self.maxpos,
             self.strand,
-            dictToGFF(attrs),
+            dict_to_gff(attrs),
         )
 
     def gtfString(self, transcript, genePtr, exonId):
@@ -372,7 +380,7 @@ class BaseFeature(object):
             self.minpos,
             self.maxpos,
             self.strand,
-            dictToGTF(attrs),
+            dict_to_gtf(attrs),
         )
 
     def __hash__(self):
@@ -428,7 +436,7 @@ class Isoform(BaseFeature):
         self.exons.sort(key=featureSortKey, reverse=(self.strand == "-"))
         return [e.acceptor() for e in self.exons[1:]]
 
-    def addExon(self, exon: Exon) -> bool:
+    def add_exon(self, exon: Exon) -> bool:
         """
         Adds an exon to the isoform if it's unique.
         Returns True if the exon was added; false otherwise.
@@ -493,7 +501,7 @@ class Isoform(BaseFeature):
     def exonString(self):
         return ",".join([str(e) for e in self.exons])
 
-    def getFeatureList(self, featureType):
+    def get_feature_list(self, featureType):
         return [f for f in self.features if f.featureType == featureType]
 
     def gffStrings(self) -> list[str]:
@@ -515,8 +523,8 @@ class Isoform(BaseFeature):
 
     def gtfStrings(self) -> list[str]:
         result: list[str] = []
-        # Always sort in ascending order by position
-        exonList = sorted(self.exons, key=featureSortKey)
+        # Compatibility policy: GTF remains genomic-ascending on both strands.
+        exonList = sorted(self.exons, key=gtf_feature_sort_key)
         for i in range(len(exonList)):
             exon = exonList[i]
             result.append(exon.gtfString(self.id, self.parent, i + 1))
@@ -618,7 +626,7 @@ class mRNA(Isoform):
         self.cds.sort(key=featureSortKey, reverse=(self.strand == "-"))
         return [c.acceptor() for c in self.cds[1:]]
 
-    def addCDS(self, cds: CDS) -> bool:
+    def add_cds(self, cds: CDS) -> bool:
         """
         Adds a CDS to the mRNA if it's unique.
         Returns True if the CDS was added; false otherwise.
@@ -767,8 +775,8 @@ class mRNA(Isoform):
         if codonString:
             result.append(codonString)
 
-        # Always sort in ascending order by position
-        cdsList = sorted(self.cds, key=featureSortKey)
+        # Compatibility policy: GTF remains genomic-ascending on both strands.
+        cdsList = sorted(self.cds, key=gtf_feature_sort_key)
         for i in range(len(cdsList)):
             c = cdsList[i]
             result.append(c.gtfString(self.id, self.parent, i + 1))
@@ -880,7 +888,7 @@ class Gene(BaseFeature):
             result = True
 
         mrna = self.add_mrna(new_mrna)
-        mrna.addCDS(cds)
+        mrna.add_cds(cds)
         self.start_codons[mrna.id] = mrna.startCodon()
         self.end_codons[mrna.id] = mrna.endCodon()
         return result
@@ -905,7 +913,7 @@ class Gene(BaseFeature):
             result = True
 
         isoform = self.add_isoform(new_isoform)
-        isoform.addExon(exon)
+        isoform.add_exon(exon)
         return result
 
     def add_feature(self, feature: BaseFeature) -> None:
@@ -934,21 +942,6 @@ class Gene(BaseFeature):
         mrna.parent = self
         return self.mrna.setdefault(mrna.id, mrna)
 
-    def addCDS(self, newmRNA, newCDS):
-        return self.add_cds(newmRNA, newCDS)
-
-    def addExon(self, newIsoform, newExon):
-        return self.add_exon(newIsoform, newExon)
-
-    def addFeature(self, feature: BaseFeature) -> None:
-        self.add_feature(feature)
-
-    def addIsoform(self, isoform):
-        return self.add_isoform(isoform)
-
-    def addmRNA(self, mrna):
-        return self.add_mrna(mrna)
-
     def detailString(self):
         result = (
             f"{self.id} ({self.chromosome}): {self.start()}-{self.end()} "
@@ -972,7 +965,7 @@ class Gene(BaseFeature):
         A codon location is given as a duple of (start,end) positions."""
         return self.end_codons
 
-    def getFeatureList(self, featureType):
+    def get_feature_list(self, featureType):
         return [f for f in self.features if f.featureType == featureType]
 
     def getIntrons(self):
@@ -1055,7 +1048,7 @@ class Gene(BaseFeature):
         for k in allKeys:
             if k in commonKeys:
                 allExons = self.isoforms[k].exons + self.mrna[k].cds
-                allExons.sort(key=featureSortKey)
+                allExons.sort(key=gtf_feature_sort_key)
 
                 # Ensure that there are codons to write
                 self.mrna[k].inferCodons()
@@ -1145,7 +1138,7 @@ class PseudoGene(Gene):
         return self.__str__()
 
 
-class GeneModel(object):
+class GeneModel:
     def __init__(
         self,
         gff_path: GffRecordSource | None,
@@ -1332,7 +1325,7 @@ class GeneModel(object):
         """
         result = []
         for gene in self.allGenes.values():
-            fList = gene.getFeatureList(featureType)
+            fList = gene.get_feature_list(featureType)
             if fList:
                 result += fList
         return result
@@ -1575,33 +1568,3 @@ class GeneModel(object):
             gene_filter=geneFilter,
             verbose=verbose,
         )
-
-    # Legacy camelCase compatibility aliases (keep external API stable).
-    addChromosome = add_chromosome
-    addGene = add_gene
-    binarySearchGenes = binary_search_genes
-    cleanName = clean_name
-    getAllAcceptors = get_all_acceptors
-    getAllDonors = get_all_donors
-    getAllGeneIds = get_all_gene_ids
-    getAllGenes = get_all_genes
-    getAnnotation = get_annotation
-    getAnnotationDict = get_annotation_dict
-    getChromosome = get_chromosome
-    getChromosomes = get_chromosomes
-    getFeatureList = get_feature_list
-    getGene = get_gene
-    getGeneByName = get_gene_by_name
-    getGeneFromLocations = get_gene_from_locations
-    getGeneRecords = get_gene_records
-    getGenes = get_genes
-    getGenesInRange = get_genes_in_range
-    getKnownAcceptors = get_known_acceptors
-    getKnownDonors = get_known_donors
-    getParent = get_parent
-    getRecordTypes = get_record_types
-    isoformDict = isoform_dict
-    loadGeneModel = load_gene_model
-    makeSortedModel = make_sorted_model
-    writeGFF = write_gff
-    writeGTF = write_gtf
