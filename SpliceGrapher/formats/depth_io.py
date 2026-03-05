@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import os
 import sys
 from collections.abc import Callable, Iterator
 from os import PathLike
@@ -31,65 +30,77 @@ class JunctionRecord(Protocol):
 
 TJunction = TypeVar("TJunction", bound=JunctionRecord)
 JunctionMap: TypeAlias = dict[str, list[TJunction]]
-ParseJunction = Callable[[str], TJunction]
+ParseJunction: TypeAlias = Callable[[str], TJunction]
 
 
 def _as_text(line: str | bytes) -> str:
     return line.decode("utf-8") if isinstance(line, bytes) else line
 
 
+def _iter_text_lines(stream: TextIO | BinaryIO) -> Iterator[str]:
+    for line in stream:
+        yield _as_text(line)
+
+
 def _load_lines(source: DepthSource) -> Iterator[str]:
-    if isinstance(source, (str, os.PathLike)):
+    """Yield decoded lines from a path or an already-open stream."""
+    if isinstance(source, (str, PathLike)):
         with ez_open(Path(source)) as stream:
-            for line in stream:
-                yield _as_text(line)
+            yield from _iter_text_lines(stream)
         return
-    if hasattr(source, "__iter__"):
-        for line in source:
-            yield _as_text(line)
-        return
-    if hasattr(source, "readline"):
-        while True:
-            line = source.readline()
-            if line == "" or line == b"":
-                break
-            yield _as_text(line)
-        return
-    raise ValueError(f"Unrecognized depth record source: {type(source)!r}")
+
+    yield from _iter_text_lines(source)
 
 
 def is_depths_file(
     source: DepthSource,
     *,
-    depth_codes: tuple[ShortReadCode, ...] | tuple[ShortReadCode, ShortReadCode, ShortReadCode] = (
+    depth_codes: tuple[ShortReadCode, ...] = (
         ShortReadCode.CHROM,
         ShortReadCode.DEPTH,
         ShortReadCode.JUNCTION,
     ),
 ) -> bool:
     """Return ``True`` when source begins with a valid SGN depth record code."""
-    first_line: str | bytes
-    if isinstance(source, (str, os.PathLike)):
-        path = os.fspath(source)
-        if not os.path.isfile(path):
+    first_line: str | bytes | None = None
+    if isinstance(source, (str, PathLike)):
+        path = Path(source)
+        if not path.is_file():
             return False
         with ez_open(path) as stream:
             first_line = stream.readline()
-    elif hasattr(source, "read"):
-        reset_position = None
-        if hasattr(source, "tell") and hasattr(source, "seek"):
-            try:
-                reset_position = source.tell()
-            except (OSError, ValueError):
-                reset_position = None
-        first_line = source.readline()
-        if reset_position is not None:
-            source.seek(reset_position)
     else:
+        try:
+            reset_position = source.tell()
+            first_line = source.readline()
+            source.seek(reset_position)
+        except (AttributeError, OSError, ValueError):
+            # For unseekable streams, avoid consuming input during format probes.
+            # Callers should route those sources directly into read_depths().
+            return False
+
+    if not first_line:
         return False
 
     parts = _as_text(first_line).strip().split("\t")
     return bool(parts) and parts[0] in depth_codes
+
+
+def _apply_run_length_depths(chrom_data: DepthValues, run_length_string: str) -> None:
+    """Decode one run-length depth record into a chromosome depth array."""
+    position = 0
+    chrom_limit = len(chrom_data)
+    for run_length_pair in run_length_string.split(","):
+        run_length_str, height_str = run_length_pair.split(":", 1)
+        run_length = int(run_length_str)
+        height = int(height_str)
+
+        upper_bound = min(chrom_limit, position + run_length)
+        if upper_bound > position:
+            chrom_data[position:upper_bound] = height
+        position += run_length
+        if position >= chrom_limit:
+            break
 
 
 def read_depths(
@@ -120,29 +131,22 @@ def read_depths(
         if len(parts) < 3:
             raise ValueError(f"Bad depths record at line {indicator.ctr}:\n{text_line}")
 
-        record_type = parts[0]
-        chrom = parts[1]
+        record_type, chrom = parts[0], parts[1]
         if record_type == chrom_code:
-            if not depths:
-                continue
-            chromosome_limit = min(maxpos, int(parts[2]))
-            chromosome_limits[chrom] = chromosome_limit
-            depth_map[chrom] = numpy.zeros(chromosome_limit, dtype=numpy.int32)
+            if depths:
+                chromosome_limit = min(maxpos, int(parts[2]))
+                chromosome_limits[chrom] = chromosome_limit
+                depth_map[chrom] = numpy.zeros(chromosome_limit, dtype=numpy.int32)
             continue
 
         if record_type == jct_code:
-            if not junctions:
-                continue
-            assert parse_junction is not None
-            junction = parse_junction(text_line.strip())
-            if junction.count < minjct:
-                continue
-            if junction.minAnchor() < minanchor:
-                continue
-            chromosome_limit = chromosome_limits.get(chrom, maxpos)
-            if junction.minpos > chromosome_limit:
-                continue
-            junction_map.setdefault(chrom, []).append(junction)
+            if junctions:
+                assert parse_junction is not None
+                junction = parse_junction(text_line.strip())
+                if junction.count >= minjct and junction.minAnchor() >= minanchor:
+                    chromosome_limit = chromosome_limits.get(chrom, maxpos)
+                    if junction.minpos <= chromosome_limit:
+                        junction_map.setdefault(chrom, []).append(junction)
             continue
 
         if not depths:
@@ -150,19 +154,7 @@ def read_depths(
         if chrom not in depth_map:
             raise ValueError(f"No chromosome information specified for {chrom} depths")
 
-        run_length_string = parts[2]
-        position = 0
-        chrom_limit = len(depth_map[chrom])
-        for run_length_pair in run_length_string.split(","):
-            run_length_str, height_str = run_length_pair.split(":", 1)
-            run_length = int(run_length_str)
-            height = int(height_str)
-            upper_bound = min(chrom_limit, position + run_length)
-            if upper_bound > position:
-                depth_map[chrom][position:upper_bound] = height
-            position += run_length
-            if position >= chrom_limit:
-                break
+        _apply_run_length_depths(depth_map[chrom], parts[2])
 
     indicator.finish()
     return depth_map, junction_map

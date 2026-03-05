@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import io
 from pathlib import Path
+from typing import TextIO, cast
 
 import numpy
 
@@ -29,6 +30,30 @@ def test_depth_io_is_depths_file_matches_shortread_behavior() -> None:
     assert is_depths_file(stream) is True
     assert isDepthsFile(stream) is True
     assert stream.tell() == 0
+
+
+def test_depth_io_is_depths_file_rejects_unseekable_stream_without_consuming() -> None:
+    from SpliceGrapher.formats.depth_io import is_depths_file
+
+    class UnseekableStream:
+        def __init__(self, text: str) -> None:
+            self._stream = io.StringIO(text)
+
+        def readline(self, size: int = -1) -> str:
+            return self._stream.readline(size)
+
+        def tell(self) -> int:
+            msg = "stream is unseekable"
+            raise OSError(msg)
+
+        def seek(self, offset: int, whence: int = 0) -> int:
+            msg = "stream is unseekable"
+            raise OSError(msg)
+
+    stream = UnseekableStream("C\tchr1\t3\nD\tchr1\t1:0,2:2\n")
+
+    assert is_depths_file(cast(TextIO, stream)) is False
+    assert stream.readline() == "C\tchr1\t3\n"
 
 
 def test_depth_io_read_depths_matches_legacy_parser(tmp_path: Path) -> None:
@@ -68,10 +93,16 @@ def test_depth_io_read_depths_matches_legacy_parser(tmp_path: Path) -> None:
 
 def test_depth_io_read_depths_respects_maxpos_without_extending_depth_array() -> None:
     from SpliceGrapher.formats.depth_io import read_depths
+    from SpliceGrapher.shared.ShortRead import stringToJunction
 
     stream = io.StringIO("C\tchr1\t10\nD\tchr1\t10:5\n")
 
-    depths, junctions = read_depths(stream, maxpos=3, junctions=False)
+    depths, junctions = read_depths(
+        stream,
+        maxpos=3,
+        junctions=False,
+        parse_junction=stringToJunction,
+    )
 
     assert "chr1" in depths
     assert len(depths["chr1"]) == 3
