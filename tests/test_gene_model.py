@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import inspect
+from collections.abc import Sequence
 from pathlib import Path
 
 import pytest
@@ -209,6 +210,30 @@ def test_transcript_regions_do_not_store_parent_backlinks() -> None:
     assert not hasattr(exon, "parents")
 
 
+def test_model_classes_define_slots_without_instance_dict() -> None:
+    isoform = gm.Isoform("TX1", 1, 20, "chr1", "+")
+    objects = [
+        gm.TranscriptRegion(RecordType.CDS, 1, 2, "chr1", "+"),
+        Exon(1, 2, "chr1", "+"),
+        isoform,
+        gm.Mrna("TX1", 1, 20, "chr1", "+"),
+        Gene("GENE1", None, 1, 20, "chr1", "+"),
+        gm.PseudoGene("PSEUDO1", None, 1, 20, "chr1", "+"),
+    ]
+    for item in objects:
+        assert not hasattr(item, "__dict__")
+
+
+def test_pseudogene_reuses_gene_initialization_shape() -> None:
+    pseudo = gm.PseudoGene("PSEUDO1", None, 1, 20, "chr1", "+")
+
+    assert pseudo.feature_type is RecordType.PSEUDOGENE
+    assert isinstance(pseudo.isoforms, dict)
+    assert isinstance(pseudo.mrna, dict)
+    assert isinstance(pseudo.exons, list)
+    assert isinstance(pseudo.cds, list)
+
+
 def test_gene_default_attributes_are_not_shared() -> None:
     gene_one = Gene("GENE1", None, 1, 10, "chr1", "+")
     gene_two = Gene("GENE2", None, 20, 30, "chr1", "+")
@@ -247,6 +272,43 @@ def test_load_gene_model_delegates_to_parser_boundary(monkeypatch: pytest.Monkey
         calls["kwargs"] = kwargs
 
     monkeypatch.setattr(parser_boundary, "load_gene_model_records", _fake_loader)
+
+    model.load_gene_model(records, verbose=True)
+
+    assert calls["model"] is model
+    assert calls["records"] == records
+    assert calls["kwargs"] == {
+        "require_notes": False,
+        "chromosomes": None,
+        "verbose": True,
+        "ignore_errors": False,
+    }
+
+
+def test_load_gene_model_delegates_to_repository(monkeypatch: pytest.MonkeyPatch) -> None:
+    model = GeneModel(None)
+    records = ["chr1\tsrc\tgene\t1\t10\t.\t+\t.\tID=GENE1;Name=GENE1"]
+    calls: dict[str, object] = {}
+
+    def _fake_repo_load(
+        model_arg: GeneModel,
+        gff_records_arg: gm.GffRecordSource,
+        *,
+        require_notes: bool,
+        chromosomes: Sequence[str] | str | None,
+        verbose: bool,
+        ignore_errors: bool,
+    ) -> None:
+        calls["model"] = model_arg
+        calls["records"] = gff_records_arg
+        calls["kwargs"] = {
+            "require_notes": require_notes,
+            "chromosomes": chromosomes,
+            "verbose": verbose,
+            "ignore_errors": ignore_errors,
+        }
+
+    monkeypatch.setattr(gm.GeneModelRepository, "load", _fake_repo_load)
 
     model.load_gene_model(records, verbose=True)
 

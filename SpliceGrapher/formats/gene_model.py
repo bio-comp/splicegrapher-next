@@ -83,6 +83,63 @@ feature_contains = _models.feature_contains
 feature_search = _models.feature_search
 
 
+class GeneModelRepository:
+    """Serialization boundary for loading and writing ``GeneModel`` payloads."""
+
+    @staticmethod
+    def load(
+        model: GeneModel,
+        gff_records: GffRecordSource,
+        *,
+        require_notes: bool = False,
+        chromosomes: Sequence[str] | str | None = None,
+        verbose: bool = False,
+        ignore_errors: bool = False,
+    ) -> None:
+        from SpliceGrapher.formats.parsers.gene_model_gff import load_gene_model_records
+
+        load_gene_model_records(
+            model,
+            gff_records,
+            require_notes=require_notes,
+            chromosomes=chromosomes,
+            verbose=verbose,
+            ignore_errors=ignore_errors,
+        )
+
+    @staticmethod
+    def write_gff(
+        model: GeneModel,
+        gff_path: str | TextIO,
+        *,
+        gene_filter: GeneFilter = default_gene_filter,
+        gene_set: set[str] | list[str] | tuple[str, ...] | None = None,
+        verbose: bool = False,
+    ) -> None:
+        write_gene_model_gff(
+            model,
+            gff_path,
+            gene_filter=gene_filter,
+            gene_set=gene_set,
+            verbose=verbose,
+        )
+
+    @staticmethod
+    def write_gtf(
+        model: GeneModel,
+        gtf_path: str | TextIO,
+        *,
+        gene_filter: GeneFilter = default_gene_filter,
+        verbose: bool = False,
+    ) -> None:
+        write_gene_model_gtf(
+            model,
+            gtf_path,
+            gene_filter=gene_filter,
+            verbose=verbose,
+        )
+
+
 @dataclass(slots=True)
 class GeneModel:
     gff_path: GffRecordSource | None
@@ -97,7 +154,9 @@ class GeneModel:
     model: dict[str, dict[str, Gene]] = field(init=False, default_factory=dict)
     mrna_forms: dict[str, dict[str, Mrna]] = field(init=False, default_factory=dict)
     mrna_gene: dict[str, dict[str, Gene]] = field(init=False, default_factory=dict)
-    chromosome_index: dict[str, ChromosomeGeneIndex] = field(init=False, default_factory=dict)
+    chromosome_index: dict[str, ChromosomeGeneIndex] = field(
+        init=False, default_factory=dict
+    )
 
     def __post_init__(self) -> None:
         """Instantiates a GeneModel object and optionally loads a GFF source."""
@@ -175,7 +234,9 @@ class GeneModel:
             result[chrom] = self.get_known_donors(chrom, gene_filter)
         return result
 
-    def get_all_gene_ids(self, gene_filter: GeneFilter = default_gene_filter) -> list[str]:
+    def get_all_gene_ids(
+        self, gene_filter: GeneFilter = default_gene_filter
+    ) -> list[str]:
         """Returns a list of ids for all genes stored."""
         return [g.id for g in self.all_genes.values() if gene_filter(g)]
 
@@ -278,7 +339,9 @@ class GeneModel:
         chrom_key = chrom.lower()
         chrom_index = self.chromosome_index.get(chrom_key)
         if chrom_index is None:
-            raise KeyError(f"Key {chrom_key} not found in {','.join(self.model.keys())}")
+            raise KeyError(
+                f"Key {chrom_key} not found in {','.join(self.model.keys())}"
+            )
         return chrom_index.find_gene(start_pos, end_pos, strand)
 
     def get_gene_records(
@@ -423,9 +486,7 @@ class GeneModel:
           'verbose'      - provide verbose feedback (default=False)
           'ignore_errors' - ignore error conditions (default=False)
         """
-        from SpliceGrapher.formats.parsers.gene_model_gff import load_gene_model_records
-
-        load_gene_model_records(
+        GeneModelRepository.load(
             self,
             gff_records,
             require_notes=require_notes,
@@ -436,7 +497,8 @@ class GeneModel:
 
     def make_sorted_model(self) -> None:
         self.chromosome_index = {
-            chrom: ChromosomeGeneIndex.build(self.model[chrom].values()) for chrom in self.model
+            chrom: ChromosomeGeneIndex.build(self.model[chrom].values())
+            for chrom in self.model
         }
 
     def write_gff(
@@ -448,7 +510,7 @@ class GeneModel:
         verbose: bool = False,
     ) -> None:
         """Writes a complete gene model out to a GFF file."""
-        write_gene_model_gff(
+        GeneModelRepository.write_gff(
             self,
             gff_path,
             gene_filter=gene_filter,
@@ -464,7 +526,7 @@ class GeneModel:
         verbose: bool = False,
     ) -> None:
         """Writes a complete gene model out to a GTF file."""
-        write_gene_model_gtf(
+        GeneModelRepository.write_gtf(
             self,
             gtf_path,
             gene_filter=gene_filter,

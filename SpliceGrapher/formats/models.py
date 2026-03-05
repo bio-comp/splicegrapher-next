@@ -441,6 +441,8 @@ class BaseFeature:
 
 
 class TranscriptRegion(BaseFeature):
+    __slots__ = ()
+
     def __init__(
         self,
         feature_type: str | RecordType,
@@ -461,6 +463,8 @@ class TranscriptRegion(BaseFeature):
 
 
 class Exon(TranscriptRegion):
+    __slots__ = ()
+
     def __init__(
         self,
         start: int,
@@ -473,6 +477,8 @@ class Exon(TranscriptRegion):
 
 
 class Isoform(BaseFeature):
+    __slots__ = ("id", "features", "exons", "exon_map")
+
     def __init__(
         self,
         id: str,
@@ -623,6 +629,8 @@ class Isoform(BaseFeature):
 
 # Just as exons are part of an isoform, CDS/UTR regions are part of an Mrna sequence:
 class CDS(TranscriptRegion):
+    __slots__ = ()
+
     def __init__(
         self,
         start: int,
@@ -662,6 +670,8 @@ class CDS(TranscriptRegion):
 
 # We treat UTR records the same way as CDS records
 class FpUtr(TranscriptRegion):
+    __slots__ = ()
+
     def __init__(
         self,
         start: int,
@@ -674,6 +684,8 @@ class FpUtr(TranscriptRegion):
 
 
 class TpUtr(TranscriptRegion):
+    __slots__ = ()
+
     def __init__(
         self,
         start: int,
@@ -686,6 +698,16 @@ class TpUtr(TranscriptRegion):
 
 
 class Mrna(Isoform):
+    __slots__ = (
+        "id",
+        "exons",
+        "features",
+        "cds",
+        "cds_map",
+        "start_codon_pos",
+        "end_codon_pos",
+    )
+
     """
     An Mrna acts like an isoform in that it is associated with a parent gene
     and contains a number of coding sequences (CDS).
@@ -936,6 +958,21 @@ class Mrna(Isoform):
 
 
 class Gene(BaseFeature):
+    __slots__ = (
+        "id",
+        "name",
+        "note",
+        "isoforms",
+        "mrna",
+        "exons",
+        "cds",
+        "exon_map",
+        "cds_map",
+        "start_codon_map",
+        "end_codon_map",
+        "features",
+    )
+
     def __init__(
         self,
         id: str,
@@ -1230,6 +1267,8 @@ class Gene(BaseFeature):
 
 
 class PseudoGene(Gene):
+    __slots__ = ()
+
     def __init__(
         self,
         id: str,
@@ -1241,20 +1280,8 @@ class PseudoGene(Gene):
         name: str | None = None,
         attr: AttrMap | None = None,
     ) -> None:
-        BaseFeature.__init__(self, RecordType.PSEUDOGENE, start, end, chromosome, strand, attr)
-        self.id = id
-        self.name = name if name is not None else id
-        self.note = note
-        self.features = []
-        self.exons = []
-        self.cds = []
-        self.mrna = {}
-        self.isoforms = {}
-        self.exon_map = {}
-        self.cds_map = {}
-
-        self.start_codon_map = {}
-        self.end_codon_map = {}
+        super().__init__(id, note, start, end, chromosome, strand, name=name, attr=attr)
+        self.feature_type = RecordType.PSEUDOGENE
 
     def detail_string(self) -> str:
         return self.__str__()
