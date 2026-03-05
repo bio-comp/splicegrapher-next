@@ -3,7 +3,7 @@ Module containing classes and methods for handling short-read data.
 """
 
 import os
-from sys import maxsize as MAXINT
+import sys
 
 from SpliceGrapher.core.enums import JunctionCode, ShortReadCode
 from SpliceGrapher.formats.depth_io import is_depths_file, read_depths
@@ -49,8 +49,7 @@ def depthsHeader(path):
             if parts[0] == CHROM_CODE:
                 if len(parts) != 3:
                     raise ValueError(
-                        "** %s has invalid chromosome record at line %d:\n%s\n"
-                        % (path, ctr, s)
+                        "** %s has invalid chromosome record at line %d:\n%s\n" % (path, ctr, s)
                     )
                 result[parts[1]] = int(parts[2])
             else:
@@ -64,7 +63,7 @@ def depthsToClusters(
     *,
     minDepth=1,
     minpos=0,
-    maxpos=MAXINT,
+    maxpos=sys.maxsize,
     reference=0,
     threshold=1,
 ):
@@ -110,7 +109,7 @@ def isDepthsFile(f):
 def readDepths(
     f,
     *,
-    maxpos=MAXINT,
+    maxpos=sys.maxsize,
     minanchor=0,
     minjct=1,
     depths=True,
@@ -139,9 +138,7 @@ def stringToJunction(s):
     SpliceJunction.toString() into a SpliceJunction record."""
     parts = s.split("\t")
     if len(parts) != 9:
-        raise ValueError(
-            "Invalid SpliceJunction record has %d columns (expected 9)" % len(parts)
-        )
+        raise ValueError("Invalid SpliceJunction record has %d columns (expected 9)" % len(parts))
 
     if parts[0] != JCT_CODE:
         raise ValueError("Invalid SpliceJunction code: %s" % parts[0])
@@ -541,7 +538,7 @@ class Cluster(object):
         self.depths[pos] = self.depths.setdefault(pos, 0) + depth
         # assert(self.minpos <= self.maxpos)
 
-    def avgDepth(self, minpos=0, maxpos=MAXINT):
+    def avgDepth(self, minpos=0, maxpos=sys.maxsize):
         """Returns the average read depth between the start and end of the cluster,
         or between two points within the cluster."""
         start = max(minpos, self.minpos)
