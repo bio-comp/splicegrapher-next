@@ -8,7 +8,7 @@ from sys import maxsize as MAXINT
 from SpliceGrapher.core.enums import JunctionCode, ShortReadCode
 from SpliceGrapher.formats.depth_io import is_depths_file, read_depths
 from SpliceGrapher.shared.file_utils import ez_open
-from SpliceGrapher.shared.process_utils import getAttribute, idFactory
+from SpliceGrapher.shared.process_utils import idFactory
 from SpliceGrapher.shared.progress import ProgressIndicator
 
 #################################################
@@ -49,7 +49,8 @@ def depthsHeader(path):
             if parts[0] == CHROM_CODE:
                 if len(parts) != 3:
                     raise ValueError(
-                        "** %s has invalid chromosome record at line %d:\n%s\n" % (path, ctr, s)
+                        "** %s has invalid chromosome record at line %d:\n%s\n"
+                        % (path, ctr, s)
                     )
                 result[parts[1]] = int(parts[2])
             else:
@@ -57,7 +58,16 @@ def depthsHeader(path):
     return result
 
 
-def depthsToClusters(chromosome, depths, **args):
+def depthsToClusters(
+    chromosome,
+    depths,
+    *,
+    minDepth=1,
+    minpos=0,
+    maxpos=MAXINT,
+    reference=0,
+    threshold=1,
+):
     """
     Given a list of read depths, returns a list of clusters where
     coverage exceeds a given threshold.  To get correct positions
@@ -65,11 +75,6 @@ def depthsToClusters(chromosome, depths, **args):
     start position.  You may also specify a minimum average depth,
     in which case clusters having a lower average depth will be omitted.
     """
-    minDepth = getAttribute("minDepth", 1, **args)
-    minpos = getAttribute("minpos", 0, **args)
-    maxpos = getAttribute("maxpos", MAXINT, **args)
-    reference = getAttribute("reference", 0, **args)
-    threshold = getAttribute("threshold", 1, **args)
     result = []
     current = None
     maxpos = min(len(depths), maxpos)
@@ -102,19 +107,28 @@ def isDepthsFile(f):
     return is_depths_file(f, depth_codes=tuple(DEPTH_CODES))
 
 
-def readDepths(f, **args):
+def readDepths(
+    f,
+    *,
+    maxpos=MAXINT,
+    minanchor=0,
+    minjct=1,
+    depths=True,
+    junctions=True,
+    verbose=False,
+):
     """Loads read depth data from a SpliceGrapher depth file.
     Returns a dictionary of read depth arrays, one per chromosome,
     along with a dictionary of splice junctions."""
     return read_depths(
         f,
         parse_junction=stringToJunction,
-        maxpos=getAttribute("maxpos", MAXINT, **args),
-        minanchor=getAttribute("minanchor", 0, **args),
-        minjct=getAttribute("minjct", 1, **args),
-        depths=getAttribute("depths", True, **args),
-        junctions=getAttribute("junctions", True, **args),
-        verbose=getAttribute("verbose", False, **args),
+        maxpos=maxpos,
+        minanchor=minanchor,
+        minjct=minjct,
+        depths=depths,
+        junctions=junctions,
+        verbose=verbose,
         chrom_code=CHROM_CODE,
         jct_code=JCT_CODE,
     )
@@ -125,7 +139,9 @@ def stringToJunction(s):
     SpliceJunction.toString() into a SpliceJunction record."""
     parts = s.split("\t")
     if len(parts) != 9:
-        raise ValueError("Invalid SpliceJunction record has %d columns (expected 9)" % len(parts))
+        raise ValueError(
+            "Invalid SpliceJunction record has %d columns (expected 9)" % len(parts)
+        )
 
     if parts[0] != JCT_CODE:
         raise ValueError("Invalid SpliceJunction code: %s" % parts[0])
@@ -399,7 +415,12 @@ class SpliceJunction(Read):
         )
 
     def __str__(self):
-        return "%s don=%d, acc=%d (%s)" % (self.chromosome, self.donval, self.accval, self.strand)
+        return "%s don=%d, acc=%d (%s)" % (
+            self.chromosome,
+            self.donval,
+            self.accval,
+            self.strand,
+        )
 
     def acceptor(self, strand=None):
         """Returns the acceptor site for the junction based on the strand."""

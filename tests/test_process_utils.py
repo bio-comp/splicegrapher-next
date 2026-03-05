@@ -2,13 +2,28 @@
 
 from __future__ import annotations
 
+import inspect
 import io
 import subprocess
-from typing import Any
+from collections.abc import Callable
+from typing import Any, cast
 
 import pytest
 
 from SpliceGrapher.shared import process_utils
+
+
+def test_run_command_legacy_signature_is_explicit() -> None:
+    signature = inspect.signature(process_utils.runCommand)
+    assert all(
+        param.kind != inspect.Parameter.VAR_KEYWORD for param in signature.parameters.values()
+    )
+
+
+def test_run_command_rejects_unknown_keyword_argument() -> None:
+    run_command = cast(Callable[..., object], process_utils.runCommand)
+    with pytest.raises(TypeError):
+        run_command("echo hello", nonsense=True)
 
 
 def test_run_command_redirects_to_devnull_by_default(monkeypatch) -> None:
