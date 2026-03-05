@@ -10,8 +10,8 @@ def test_load_gene_models_reads_gff3_and_gtf(tmp_path: Path) -> None:
     gff3_model = load_gene_models(str(fixture.gff3))
     gtf_model = load_gene_models(str(fixture.gtf))
 
-    assert {gene.id for gene in gff3_model.getAllGenes()} == {"GENE1", "GENE2"}
-    assert {gene.id for gene in gtf_model.getAllGenes()} == {"GENE_GTF"}
+    assert {gene.id for gene in gff3_model.get_all_genes()} == {"GENE1", "GENE2"}
+    assert {gene.id for gene in gtf_model.get_all_genes()} == {"GENE_GTF"}
 
 
 def test_load_gene_models_writes_intron_cache(tmp_path: Path) -> None:
@@ -21,7 +21,7 @@ def test_load_gene_models_writes_intron_cache(tmp_path: Path) -> None:
     model = load_gene_models(str(fixture.gff3), outdir=out_dir)
 
     cache_path = out_dir / ".idiffir_cache" / "idiffir_introns.bed"
-    assert model.getAllGenes()
+    assert model.get_all_genes()
     assert cache_path.exists()
 
     rows = [
@@ -50,7 +50,7 @@ def test_load_gene_models_normalizes_transcript_alias(tmp_path: Path) -> None:
     )
 
     model = load_gene_models(str(gff_path))
-    genes = model.getAllGenes()
+    genes = model.get_all_genes()
     assert len(genes) == 1
     assert genes[0].id == "GENE1"
     assert "tx1" in genes[0].isoforms
