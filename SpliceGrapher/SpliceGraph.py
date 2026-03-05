@@ -5,15 +5,22 @@ Module that encapsulates a splice graph.
 from __future__ import annotations
 
 import sys
+from collections.abc import Iterator
 from typing import TextIO
 
 from SpliceGrapher.core.enum_coercion import coerce_enum
-from SpliceGrapher.core.enums import AttrKey, EdgeType, NodeDisposition, RecordType, Strand
+from SpliceGrapher.core.enums import (
+    AttrKey,
+    EdgeType,
+    NodeDisposition,
+    RecordType,
+    Strand,
+)
 from SpliceGrapher.core.interval_helpers import interval_contains, intervals_overlap
 from SpliceGrapher.shared.collection_utils import as_list
 from SpliceGrapher.shared.file_utils import ez_open
 from SpliceGrapher.shared.format_utils import list_string
-from SpliceGrapher.shared.process_utils import getAttribute, idFactory
+from SpliceGrapher.shared.process_utils import idFactory
 from SpliceGrapher.shared.progress import ProgressIndicator
 
 # Attributes used in standard GFF3 files:
@@ -424,11 +431,10 @@ def equivalentGraphs(A, B):
     return True
 
 
-def getFirstGraph(f, **args):
+def getFirstGraph(f: str | TextIO, *, annotate: bool = False, verbose: bool = False) -> SpliceGraph:
     """Returns just the first splice graph found in a file."""
-    annotate = getAttribute("annotate", False, **args)
     try:
-        result = next(SpliceGraphParser(f, **args))
+        result = next(SpliceGraphParser(f, verbose=verbose))
         if annotate:
             result.annotate()
         return result
@@ -463,9 +469,8 @@ def graphMinusAS(A, B):
     return result
 
 
-def graphSubtract(A, B, **args):
+def graphSubtract(A: SpliceGraph, B: SpliceGraph, *, resolvedOnly: bool = True) -> SpliceGraph:
     """Returns a graph that represents the nodes and edges in A minus those in B."""
-    resolvedOnly = getAttribute("resolvedOnly", True, **args)
     name = "%s\\%s" % (A.getName(), B.getName())
     result = SpliceGraph(name=name, chromosome=A.chromosome, strand=A.strand)
     # Use full graph position range
@@ -555,10 +560,9 @@ def splitFiles(parser, directory=None):
         g.writeGFF(outFile)
 
 
-def updateLeaf(A, B, **args):
+def updateLeaf(A: SpliceGraph, B: SpliceGraph, *, uniqueLeaf: bool = False) -> None:
     """Method that updates leaf nodes in graph A with nodes from graph B prior to
     merging the two graphs.  We look for longer nodes with the same acceptor site."""
-    uniqueLeaf = getAttribute("uniqueLeaf", False, **args)
     mergeDict = {}
     for leaf in A.getLeaves():
         longer = [
@@ -590,11 +594,9 @@ def updateLeaf(A, B, **args):
         del A.nodeDict[node.id]
 
 
-def updateRoot(A, B, **args):
+def updateRoot(A: SpliceGraph, B: SpliceGraph, *, uniqueRoot: bool = False) -> None:
     """Method that updates root nodes in graph A using nodes from graph B prior to
     merging the two graphs.  We look for longer nodes that have the same donor site."""
-    uniqueRoot = getAttribute("uniqueRoot", False, **args)
-
     mergeDict = {}
     for root in A.getRoots():
         longer = [
@@ -1411,13 +1413,11 @@ class SpliceGraph(object):
                 result[iso].append(n)
         return result
 
-    def isoformGraph(self, isoNames, **args):
+    def isoformGraph(self, isoNames, *, fuzzyMatch: bool = False):
         """Returns a splice graph that represents just the given isoforms.
         Isoforms may be given as a comma-separated string, a list or a set.
         Setting 'fuzzyMatch' to True allows you to specify part of an isoform
         name in the list; it will match all isoforms that contain that part."""
-        fuzzyMatch = getAttribute("fuzzyMatch", False, **args)
-
         isoNames = as_list(isoNames)
         result = None
         for name in isoNames:
@@ -1522,14 +1522,19 @@ class SpliceGraph(object):
         self.name = name
         self.attrs[ID_ATTR] = name
 
-    def union(self, other: SpliceGraph, **args: object) -> SpliceGraph:
+    def union(
+        self,
+        other: SpliceGraph,
+        *,
+        keepName: bool = False,
+        mergeEnds: bool = False,
+        idGenerator: Iterator[str] | None = None,
+    ) -> SpliceGraph:
         """Merges two graphs into one.  Adds nodes that are distinct and merges nodes
         that have the same start/end positions.  Merged nodes will share AS
         information.  New attributes may be added, but conflicts will be resolved
         in favor of the existing graph."""
-        keepName = getAttribute("keepName", False, **args)
-        mergeEnds = getAttribute("mergeEnds", False, **args)
-        idgen = getAttribute("idGenerator", idFactory("%s_U" % self.getName()), **args)
+        idgen = idGenerator if idGenerator is not None else idFactory("%s_U" % self.getName())
 
         # establish correct strand
         self_strand = coerce_enum(self.strand, Strand, field="strand")
@@ -1690,10 +1695,10 @@ class SpliceGraphParser(object):
     """Class that parses a GFF file filled with splice graphs and provides an
     iterator over each graph in the file."""
 
-    def __init__(self, fileRef: str | TextIO, **args: object) -> None:
+    def __init__(self, fileRef: str | TextIO, *, verbose: bool = False) -> None:
         """Parses a GFF file filled with splice graphs and returns each graph in an iterator.
         The file may be given either as an input stream or as a file path."""
-        self.verbose = getAttribute("verbose", False, **args)
+        self.verbose = verbose
 
         if isinstance(fileRef, str):
             self.instream = ez_open(fileRef)
