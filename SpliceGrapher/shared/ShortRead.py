@@ -214,7 +214,7 @@ def writeDepths(ostr, depthDict, jctDict={}, verbose=False):
 #################################################
 #  Classes
 #################################################
-class Read(object):
+class Read:
     """
     Class that encapsulates non-spliced reads.
     """
@@ -294,7 +294,7 @@ class Read(object):
         return self.id
 
 
-class ReadPair(object):
+class ReadPair:
     """
     Class that encapsulates paired-end reads.
     """
@@ -483,7 +483,7 @@ class SpliceJunction(Read):
 
 
 # Cluster is a collection of reads
-class Cluster(object):
+class Cluster:
     """
     A cluster summarizes the information for overlapping reads that map to the same
     gene region.  Unlike reads, clusters make no distinction about strand: reads on

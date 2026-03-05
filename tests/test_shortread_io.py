@@ -33,6 +33,17 @@ def test_shortread_source_no_longer_uses_process_utils_getattribute() -> None:
     assert "getAttribute(" not in source
 
 
+def test_shortread_source_no_longer_uses_python2_object_bases() -> None:
+    shortread_path = (
+        Path(__file__).resolve().parents[1] / "SpliceGrapher" / "shared" / "ShortRead.py"
+    )
+    source = shortread_path.read_text(encoding="utf-8")
+
+    assert "class Read(object):" not in source
+    assert "class ReadPair(object):" not in source
+    assert "class Cluster(object):" not in source
+
+
 @pytest.mark.parametrize("func_name", ["depthsToClusters", "readDepths"])
 def test_shortread_hot_path_signatures_are_explicit(func_name: str) -> None:
     signature = inspect.signature(getattr(shortread, func_name))
