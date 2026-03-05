@@ -7,8 +7,8 @@ from pathlib import Path
 import pytest
 
 from SpliceGrapher.core.enums import RecordType, Strand
-from SpliceGrapher.formats import GeneModel as gm
-from SpliceGrapher.formats.GeneModel import Exon, Gene, GeneModel, feature_search
+from SpliceGrapher.formats import gene_model as gm
+from SpliceGrapher.formats.gene_model import Exon, Gene, GeneModel, feature_search
 
 
 @dataclass
