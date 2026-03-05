@@ -32,6 +32,7 @@ ReferencePath: TypeAlias = str | PathLike[str] | None
 DepthMap: TypeAlias = dict[str, numpy.ndarray]
 JunctionMap: TypeAlias = dict[str, list[SpliceJunction]]
 AlignmentMap: TypeAlias = dict[str, list[tuple[int, int]]]
+JunctionKey: TypeAlias = tuple[str, str, int, int]
 CollectResult: TypeAlias = tuple[DepthMap, JunctionMap]
 CollectResultWithAlignments: TypeAlias = tuple[DepthMap, JunctionMap, AlignmentMap]
 
@@ -382,7 +383,7 @@ def _collect_pysam_data(
 
     align: AlignmentMap = {}
     depths: DepthMap = {}
-    junction_tmp: dict[str, dict[str, dict[int, dict[int, SpliceJunction]]]] = {}
+    junction_tmp: dict[JunctionKey, SpliceJunction] = {}
     limit: dict[str, int] = {}
 
     streamer = AlignmentStreamer(source, reference_fasta=reference_fasta)
@@ -460,13 +461,11 @@ def _collect_pysam_data(
             if not jct_list:
                 continue
 
-            chrom_junctions = junction_tmp.setdefault(chrom, {})
-            strand_junctions = chrom_junctions.setdefault(strand, {})
             for new_jct in jct_list:
-                donor_junctions = strand_junctions.setdefault(new_jct.p1, {})
-                existing = donor_junctions.get(new_jct.p2)
+                key = (chrom, strand, new_jct.p1, new_jct.p2)
+                existing = junction_tmp.get(key)
                 if existing is None:
-                    donor_junctions[new_jct.p2] = new_jct
+                    junction_tmp[key] = new_jct
                 else:
                     existing.update(new_jct)
 
@@ -481,14 +480,9 @@ def _collect_pysam_data(
 
     normalized_junctions: JunctionMap = {}
     if junctions:
-        for chrom in sorted(junction_tmp.keys()):
-            normalized_junctions[chrom] = []
-            for strand in sorted(junction_tmp[chrom].keys()):
-                for anchor in sorted(junction_tmp[chrom][strand].keys()):
-                    for acceptor in sorted(junction_tmp[chrom][strand][anchor].keys()):
-                        jct = junction_tmp[chrom][strand][anchor][acceptor]
-                        if jct.count >= minjct and jct.minAnchor() >= minanchor:
-                            normalized_junctions[chrom].append(jct)
+        for (chrom, _strand, _anchor, _acceptor), jct in sorted(junction_tmp.items()):
+            if jct.count >= minjct and jct.minAnchor() >= minanchor:
+                normalized_junctions.setdefault(chrom, []).append(jct)
 
     if alignments:
         return normalized_depths, normalized_junctions, align
