@@ -11,7 +11,7 @@ from typing import cast
 import pytest
 
 from SpliceGrapher.shared import ShortRead as shortread
-from SpliceGrapher.shared.ShortRead import isDepthsFile, writeDepths
+from SpliceGrapher.shared.ShortRead import Cluster, Read, SpliceJunction, isDepthsFile, writeDepths
 
 
 def test_shortread_source_does_not_use_fasta_star_import() -> None:
@@ -68,3 +68,44 @@ def test_write_depths_accepts_text_io_stream() -> None:
 
     assert payload.startswith("C\tchr1\t3\n")
     assert "D\tchr1\t" in payload
+
+
+def test_shortread_read_objects_sort_by_chromosome_and_coordinates() -> None:
+    reads = [
+        Read("chr2", 10, 12, "+"),
+        Read("chr1", 20, 22, "+"),
+        Read("chr1", 5, 7, "+"),
+    ]
+
+    ordered = sorted(reads)
+
+    assert [r.chromosome for r in ordered] == ["chr1", "chr1", "chr2"]
+    assert [r.minpos for r in ordered] == [5, 20, 10]
+
+
+def test_shortread_cluster_objects_sort_by_coordinates() -> None:
+    cluster_a = Cluster("chr1", 20, 1, id="a")
+    cluster_a.addPosition(22, 1)
+    cluster_b = Cluster("chr1", 5, 1, id="b")
+    cluster_b.addPosition(6, 1)
+
+    ordered = sorted([cluster_a, cluster_b])
+
+    assert [c.id for c in ordered] == ["b", "a"]
+
+
+def test_write_depths_sorts_junctions_without_python2_cmp() -> None:
+    out_stream = io.StringIO()
+    jct_late = SpliceJunction("chr1", 30, 40, (2, 2), shortread.KNOWN_JCT, "+")
+    jct_early = SpliceJunction("chr1", 10, 20, (2, 2), shortread.KNOWN_JCT, "+")
+
+    writeDepths(
+        out_stream,
+        {"chr1": [0, 0, 1, 1]},
+        {"chr1": [jct_late, jct_early]},
+        verbose=False,
+    )
+
+    junction_lines = [line for line in out_stream.getvalue().splitlines() if line.startswith("J\t")]
+    assert len(junction_lines) == 2
+    assert int(junction_lines[0].split("\t")[3]) < int(junction_lines[1].split("\t")[3])
