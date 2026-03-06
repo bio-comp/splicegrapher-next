@@ -87,7 +87,7 @@ def gtf_start_codon_line(
     return (
         f"{transcript.chromosome}\t{model_domain.GFF_ID}\tstart_codon\t"
         f"{transcript.start_codon_pos[0]}\t{transcript.start_codon_pos[1]}\t.\t"
-        f"{transcript.strand}\t.\tgene_id \"{gene.id}\"; transcript_id \"{transcript.id}\""
+        f'{transcript.strand}\t.\tgene_id "{gene.id}"; transcript_id "{transcript.id}"'
     )
 
 
@@ -100,7 +100,7 @@ def gtf_stop_codon_line(
     return (
         f"{transcript.chromosome}\t{model_domain.GFF_ID}\tstop_codon\t"
         f"{transcript.end_codon_pos[0]}\t{transcript.end_codon_pos[1]}\t.\t"
-        f"{transcript.strand}\t.\tgene_id \"{gene.id}\"; transcript_id \"{transcript.id}\""
+        f'{transcript.strand}\t.\tgene_id "{gene.id}"; transcript_id "{transcript.id}"'
     )
 
 

@@ -147,13 +147,9 @@ class GeneModel:
     all_chr: dict[str, Chromosome] = field(init=False, default_factory=dict)
     found_types: dict[RecordType, bool] = field(init=False, default_factory=dict)
     model: dict[str, dict[str, Gene]] = field(init=False, default_factory=dict)
-    mrna_forms: dict[str, dict[str, Transcript]] = field(
-        init=False, default_factory=dict
-    )
+    mrna_forms: dict[str, dict[str, Transcript]] = field(init=False, default_factory=dict)
     mrna_gene: dict[str, dict[str, Gene]] = field(init=False, default_factory=dict)
-    chromosome_index: dict[str, ChromosomeGeneIndex] = field(
-        init=False, default_factory=dict
-    )
+    chromosome_index: dict[str, ChromosomeGeneIndex] = field(init=False, default_factory=dict)
 
     @classmethod
     def from_gff(
@@ -260,9 +256,7 @@ class GeneModel:
             result[chrom] = self.get_known_donors(chrom, gene_filter)
         return result
 
-    def get_all_gene_ids(
-        self, gene_filter: GeneFilter = default_gene_filter
-    ) -> list[str]:
+    def get_all_gene_ids(self, gene_filter: GeneFilter = default_gene_filter) -> list[str]:
         """Returns a list of ids for all genes stored."""
         return [g.id for g in self.all_genes.values() if gene_filter(g)]
 
@@ -344,9 +338,7 @@ class GeneModel:
         chrom_key = chrom.lower()
         chrom_index = self.chromosome_index.get(chrom_key)
         if chrom_index is None:
-            raise KeyError(
-                f"Key {chrom_key} not found in {','.join(self.model.keys())}"
-            )
+            raise KeyError(f"Key {chrom_key} not found in {','.join(self.model.keys())}")
         return chrom_index.find_gene(start_pos, end_pos, strand)
 
     def get_gene_records(
@@ -505,8 +497,7 @@ class GeneModel:
 
     def make_sorted_model(self) -> None:
         self.chromosome_index = {
-            chrom: ChromosomeGeneIndex.build(self.model[chrom].values())
-            for chrom in self.model
+            chrom: ChromosomeGeneIndex.build(self.model[chrom].values()) for chrom in self.model
         }
 
     def write_gff(

@@ -21,9 +21,7 @@ def test_interval_index_search_supports_recursive_midpoint_indexing() -> None:
     ]
     query = Exon(21, 22, "chr1", "+")
 
-    assert (
-        InMemoryIntervalIndex(features).predecessor_or_containing(query) is features[1]
-    )
+    assert InMemoryIntervalIndex(features).predecessor_or_containing(query) is features[1]
 
 
 def test_mrna_sorted_exons_uses_explicit_minintron_keyword() -> None:
@@ -49,9 +47,7 @@ def test_interval_index_search_returns_expected_match() -> None:
     ]
     query = Exon(21, 22, "chr1", "+")
 
-    assert (
-        InMemoryIntervalIndex(features).predecessor_or_containing(query) is features[1]
-    )
+    assert InMemoryIntervalIndex(features).predecessor_or_containing(query) is features[1]
 
 
 def test_feature_overlap_and_contains_match_interval_helper_semantics() -> None:
@@ -72,9 +68,7 @@ def test_interval_index_search_returns_preceding_feature_when_not_contained() ->
     ]
     query = Exon(32, 33, "chr1", "+")
 
-    assert (
-        InMemoryIntervalIndex(features).predecessor_or_containing(query) is features[1]
-    )
+    assert InMemoryIntervalIndex(features).predecessor_or_containing(query) is features[1]
 
 
 def test_interval_index_search_rejects_invalid_bounds() -> None:
@@ -105,9 +99,7 @@ def test_get_genes_in_range_uses_interval_index_when_available(
     model.make_sorted_model()
 
     def _fail_scan(*args: object, **kwargs: object) -> list[Gene]:
-        raise AssertionError(
-            "get_gene_records scan path should not be used when index exists"
-        )
+        raise AssertionError("get_gene_records scan path should not be used when index exists")
 
     monkeypatch.setattr(GeneModel, "get_gene_records", _fail_scan)
 
@@ -151,9 +143,7 @@ def test_parser_collapses_exon_and_cds_into_single_transcript_object() -> None:
     assert gene.transcripts["TX1"] is transcript
 
 
-def test_parser_unified_transcript_clean_order_is_singular_complete_and_codon_ready() -> (
-    None
-):
+def test_parser_unified_transcript_clean_order_is_singular_complete_and_codon_ready() -> None:
     records = [
         "chr1\tsource\tgene\t1\t200\t.\t+\t.\tID=GENE1;Name=GENE1",
         "chr1\tsource\tmrna\t1\t200\t.\t+\t.\tID=TX1;Parent=GENE1",
@@ -425,9 +415,7 @@ def test_write_gff_writes_chromosome_records(tmp_path: Path) -> None:
     model.write_gff(str(gff_path))
 
     lines = gff_path.read_text(encoding="utf-8").splitlines()
-    expected_prefix = (
-        "Chr1\tSpliceGrapher\tchromosome\t1\t100\t.\t.\t.\tID=Chr1;Name=Chr1"
-    )
+    expected_prefix = "Chr1\tSpliceGrapher\tchromosome\t1\t100\t.\t.\t.\tID=Chr1;Name=Chr1"
     assert lines[0].startswith(expected_prefix)
 
 
@@ -483,9 +471,7 @@ def test_isoform_gtf_strings_remain_genomic_ascending_on_minus_strand() -> None:
     isoform.add_exon(Exon(80, 90, "chr1", "-"))
     isoform.add_exon(Exon(20, 30, "chr1", "-"))
 
-    starts = [
-        int(line.split("\t")[3]) for line in ser.gtf_lines_for_transcript(isoform, gene)
-    ]
+    starts = [int(line.split("\t")[3]) for line in ser.gtf_lines_for_transcript(isoform, gene)]
     assert starts == [20, 80]
 
 
@@ -497,15 +483,12 @@ def test_mrna_gtf_strings_remain_genomic_ascending_on_minus_strand() -> None:
     transcript.add_cds(gm.CDS(20, 30, "chr1", "-"))
 
     cds_starts = [
-        int(line.split("\t")[3])
-        for line in ser.gtf_lines_for_transcript(transcript, gene)
+        int(line.split("\t")[3]) for line in ser.gtf_lines_for_transcript(transcript, gene)
     ]
     assert cds_starts == [20, 80]
 
 
-def test_gene_gtf_strings_common_path_remains_genomic_ascending_on_minus_strand() -> (
-    None
-):
+def test_gene_gtf_strings_common_path_remains_genomic_ascending_on_minus_strand() -> None:
     gene = Gene("GENE1", None, 1, 200, "chr1", "-", name="GENE1")
     isoform = gm.Transcript("TX1", 1, 200, "chr1", "-", feature_type=gm.ISOFORM_TYPE)
     transcript = gm.Transcript("TX1", 1, 200, "chr1", "-", feature_type=RecordType.MRNA)
@@ -578,9 +561,7 @@ def test_gene_default_attributes_are_not_shared() -> None:
 
 
 def test_isoform_constructor_does_not_contain_hardcoded_identifier_traps() -> None:
-    isoform = gm.Transcript(
-        "ENSG00000149256", 10, 20, "chr1", "+", feature_type=gm.ISOFORM_TYPE
-    )
+    isoform = gm.Transcript("ENSG00000149256", 10, 20, "chr1", "+", feature_type=gm.ISOFORM_TYPE)
 
     assert isoform.id == "ENSG00000149256"
 
@@ -853,6 +834,4 @@ def test_get_parent_keywords_are_supported() -> None:
     gene = Gene("GENE1", None, 10, 20, "chr1", "+", name="GENE1")
     model.add_gene(gene)
 
-    assert (
-        model.get_parent("GENE1", "chr1", search_genes=True, search_mrna=False) is gene
-    )
+    assert model.get_parent("GENE1", "chr1", search_genes=True, search_mrna=False) is gene

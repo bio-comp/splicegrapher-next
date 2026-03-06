@@ -140,9 +140,7 @@ class ChromosomeGeneIndex:
                 return gene
         return None
 
-    def find_genes_overlapping(
-        self, start_pos: int, end_pos: int, strand: str
-    ) -> list[Gene]:
+    def find_genes_overlapping(self, start_pos: int, end_pos: int, strand: str) -> list[Gene]:
         strand_index = self.interval_by_strand.get(strand)
         if strand_index is None:
             return []
@@ -151,11 +149,7 @@ class ChromosomeGeneIndex:
 
     def genes(self, strand: str | None = None) -> list[Gene]:
         if strand is None:
-            return [
-                gene
-                for strand_genes in self.by_strand.values()
-                for gene in strand_genes
-            ]
+            return [gene for strand_genes in self.by_strand.values() for gene in strand_genes]
         return list(self.by_strand.get(strand, []))
 
 
@@ -218,9 +212,7 @@ class Chromosome:
         so we must infer chromosome boundaries from observed features.
         """
         if feature.chromosome.lower() != self.name.lower():
-            raise ValueError(
-                f"Cannot use feature from {feature.chromosome} to update {self.name}"
-            )
+            raise ValueError(f"Cannot use feature from {feature.chromosome} to update {self.name}")
         self.minpos = min(self.minpos, feature.minpos)
         self.maxpos = max(self.maxpos, feature.maxpos)
 
@@ -420,16 +412,12 @@ class TranscriptRegion(BaseFeature):
 
 @dataclass(slots=True, eq=True)
 class Exon(TranscriptRegion):
-    feature_type: str | RecordType = field(
-        default=RecordType.EXON, init=False, compare=False
-    )
+    feature_type: str | RecordType = field(default=RecordType.EXON, init=False, compare=False)
 
 
 @dataclass(slots=True, eq=True)
 class CDS(TranscriptRegion):
-    feature_type: str | RecordType = field(
-        default=RecordType.CDS, init=False, compare=False
-    )
+    feature_type: str | RecordType = field(default=RecordType.CDS, init=False, compare=False)
 
     def __lt__(self, other: object) -> bool:
         if not isinstance(other, BaseFeature):
@@ -615,9 +603,7 @@ class Transcript:
         self.features.append(feature)
 
     def _ordered_splice_regions(self) -> list[_SpliceSiteLike]:
-        regions: list[_SpliceSiteLike] = (
-            list(self.cds) if self.cds else list(self.exons)
-        )
+        regions: list[_SpliceSiteLike] = list(self.cds) if self.cds else list(self.exons)
         return sorted(
             regions,
             key=attrgetter("minpos", "maxpos"),
@@ -705,9 +691,7 @@ class Transcript:
 
     def sorted_exons(self, *, minintron: int = 2) -> list[Exon]:
         if self.exons:
-            return sorted(
-                self.exons, key=feature_sort_key, reverse=(self.strand == "-")
-            )
+            return sorted(self.exons, key=feature_sort_key, reverse=(self.strand == "-"))
 
         cds_list = sorted(self.cds, key=attrgetter("minpos", "maxpos"))
         result: list[Exon] = []
@@ -723,9 +707,7 @@ class Transcript:
                     attr=prev.attributes,
                 )
             else:
-                result.append(
-                    Exon(cds.minpos, cds.maxpos, self.chromosome, self.strand)
-                )
+                result.append(Exon(cds.minpos, cds.maxpos, self.chromosome, self.strand))
         if self.strand == "-":
             result.reverse()
         for exon in result:
@@ -788,12 +770,8 @@ class Gene:
         default_factory=dict,
         compare=False,
     )
-    start_codon_map: dict[str, tuple[int, int] | None] = field(
-        default_factory=dict, compare=False
-    )
-    end_codon_map: dict[str, tuple[int, int] | None] = field(
-        default_factory=dict, compare=False
-    )
+    start_codon_map: dict[str, tuple[int, int] | None] = field(default_factory=dict, compare=False)
+    end_codon_map: dict[str, tuple[int, int] | None] = field(default_factory=dict, compare=False)
     features: list[BaseFeature] = field(default_factory=list, compare=False)
 
     def __post_init__(
@@ -911,10 +889,7 @@ class Gene:
         existing.minpos = min(existing.minpos, transcript.minpos)
         existing.maxpos = max(existing.maxpos, transcript.maxpos)
         existing.attributes.update(transcript.attributes)
-        if (
-            existing.feature_type == ISOFORM_TYPE
-            and transcript.feature_type != ISOFORM_TYPE
-        ):
+        if existing.feature_type == ISOFORM_TYPE and transcript.feature_type != ISOFORM_TYPE:
             existing.feature_type = transcript.feature_type
         self.minpos = min(self.minpos, existing.minpos)
         self.maxpos = max(self.maxpos, existing.maxpos)
@@ -958,9 +933,7 @@ class Gene:
         self,
         site_fn: Callable[[Transcript], list[int]],
     ) -> list[int]:
-        sites = chain.from_iterable(
-            site_fn(transcript) for transcript in self._iter_transcripts()
-        )
+        sites = chain.from_iterable(site_fn(transcript) for transcript in self._iter_transcripts())
         return sorted(set(sites), reverse=(self.strand == "-"))
 
     def acceptor_list(self) -> list[int]:
@@ -973,9 +946,7 @@ class Gene:
         return self.end_codon_map
 
     def get_feature_list(self, feature_type: str | RecordType) -> list[BaseFeature]:
-        return [
-            feature for feature in self.features if feature.feature_type == feature_type
-        ]
+        return [feature for feature in self.features if feature.feature_type == feature_type]
 
     def get_introns(self) -> set[tuple[int, int]]:
         introns: set[tuple[int, int]] = set()
@@ -999,9 +970,7 @@ class Gene:
     def is_single_exon(self) -> bool:
         if not self.transcripts:
             return False
-        return all(
-            len(transcript.sorted_exons()) == 1 for transcript in self._iter_transcripts()
-        )
+        return all(len(transcript.sorted_exons()) == 1 for transcript in self._iter_transcripts())
 
     def sorted_exons(self) -> list[Exon]:
         all_exons = chain.from_iterable(
