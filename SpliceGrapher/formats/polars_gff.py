@@ -13,6 +13,8 @@ from SpliceGrapher.core.enums import RecordType, Strand
 if TYPE_CHECKING:
     import polars as pl
 
+    from SpliceGrapher.formats.gene_model import GeneModel
+
 _GFF_COLUMN_COUNT = 9
 _GFF_COLUMNS = (
     "chrom",
@@ -158,8 +160,147 @@ def load_gff_to_polars(
     return pl.DataFrame(rows, schema=schema)
 
 
+def _record_type_name(value: object, *, fallback: str) -> str:
+    if isinstance(value, RecordType):
+        return value.name
+    value_string = str(value).strip()
+    if not value_string:
+        return fallback
+    return value_string.upper()
+
+
+def _feature_coordinates(feature: object) -> tuple[str, str, int, int]:
+    """Extract ``(chromosome, strand, start, end)`` from legacy or composed models."""
+    locus = getattr(feature, "locus", None)
+    if locus is not None:
+        return (
+            str(getattr(locus, "chromosome")),
+            str(getattr(locus, "strand")),
+            int(getattr(locus, "minpos")),
+            int(getattr(locus, "maxpos")),
+        )
+    return (
+        str(getattr(feature, "chromosome")),
+        str(getattr(feature, "strand")),
+        int(getattr(feature, "minpos")),
+        int(getattr(feature, "maxpos")),
+    )
+
+
+def _iter_gene_transcripts(gene: object) -> Iterator[object]:
+    transcripts = getattr(gene, "transcripts", None)
+    if isinstance(transcripts, dict):
+        yield from transcripts.values()
+        return
+
+    for attr_name in ("mrna", "isoforms"):
+        forms = getattr(gene, attr_name, None)
+        if not isinstance(forms, dict):
+            continue
+        yield from forms.values()
+
+
+def _iter_flattened_features(model: "GeneModel") -> Iterator[dict[str, str | int | None]]:
+    """Yield flat feature rows from the gene model hierarchy."""
+    for gene in model.iter_all_genes():
+        gene_chrom, gene_strand, gene_start, gene_end = _feature_coordinates(gene)
+        gene_attrs = getattr(gene, "attributes", {})
+        gene_biotype = gene_attrs.get("gene_biotype") if isinstance(gene_attrs, dict) else None
+        yield {
+            "gene_id": str(getattr(gene, "id")),
+            "transcript_id": None,
+            "feature_type": "GENE",
+            "chromosome": gene_chrom,
+            "strand": gene_strand,
+            "start_pos": gene_start,
+            "end_pos": gene_end,
+            "biotype": gene_biotype,
+        }
+
+        for transcript in _iter_gene_transcripts(gene):
+            transcript_chrom, transcript_strand, transcript_start, transcript_end = (
+                _feature_coordinates(transcript)
+            )
+            transcript_attrs = getattr(transcript, "attributes", {})
+            transcript_biotype = (
+                transcript_attrs.get("transcript_biotype")
+                if isinstance(transcript_attrs, dict)
+                else None
+            )
+            transcript_id = str(getattr(transcript, "id"))
+            transcript_type = _record_type_name(
+                getattr(transcript, "record_type", getattr(transcript, "feature_type", "")),
+                fallback="TRANSCRIPT",
+            )
+            yield {
+                "gene_id": str(getattr(gene, "id")),
+                "transcript_id": transcript_id,
+                "feature_type": transcript_type,
+                "chromosome": transcript_chrom,
+                "strand": transcript_strand,
+                "start_pos": transcript_start,
+                "end_pos": transcript_end,
+                "biotype": transcript_biotype,
+            }
+
+            for exon in getattr(transcript, "exons", []):
+                exon_chrom, exon_strand, exon_start, exon_end = _feature_coordinates(exon)
+                yield {
+                    "gene_id": str(getattr(gene, "id")),
+                    "transcript_id": transcript_id,
+                    "feature_type": "EXON",
+                    "chromosome": exon_chrom,
+                    "strand": exon_strand,
+                    "start_pos": exon_start,
+                    "end_pos": exon_end,
+                    "biotype": None,
+                }
+
+            cds_regions = getattr(transcript, "cds_regions", getattr(transcript, "cds", []))
+            for cds in cds_regions:
+                cds_chrom, cds_strand, cds_start, cds_end = _feature_coordinates(cds)
+                cds_type = _record_type_name(
+                    getattr(cds, "record_type", getattr(cds, "feature_type", "")),
+                    fallback="CDS",
+                )
+                yield {
+                    "gene_id": str(getattr(gene, "id")),
+                    "transcript_id": transcript_id,
+                    "feature_type": cds_type,
+                    "chromosome": cds_chrom,
+                    "strand": cds_strand,
+                    "start_pos": cds_start,
+                    "end_pos": cds_end,
+                    "biotype": None,
+                }
+
+
+def extract_to_dataframe(model: "GeneModel") -> "pl.DataFrame":
+    """Build a typed Polars DataFrame from a flattened gene-model stream."""
+    try:
+        pl = importlib.import_module("polars")
+    except ModuleNotFoundError as exc:
+        raise PolarsNotInstalledError(
+            "polars is not installed; install optional dependency to use this helper"
+        ) from exc
+
+    schema = {
+        "gene_id": pl.Utf8,
+        "transcript_id": pl.Utf8,
+        "feature_type": pl.Utf8,
+        "chromosome": pl.Categorical,
+        "strand": pl.Categorical,
+        "start_pos": pl.Int64,
+        "end_pos": pl.Int64,
+        "biotype": pl.Utf8,
+    }
+    rows = _iter_flattened_features(model)
+    return pl.DataFrame(rows, schema=schema)
+
+
 __all__ = [
     "PolarsNotInstalledError",
+    "extract_to_dataframe",
     "iter_gff_records",
     "load_gff_rows",
     "load_gff_to_polars",

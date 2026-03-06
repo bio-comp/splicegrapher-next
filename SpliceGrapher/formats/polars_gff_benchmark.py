@@ -217,13 +217,15 @@ def _exon_records_from_polars(path: Path) -> list[tuple[str, str, int, int, str]
 
 
 def _exon_records_from_gene_model(path: Path) -> list[tuple[str, str, int, int, str]]:
-    model = GeneModel(str(path), verbose=False)
+    model = GeneModel.from_gff(str(path), verbose=False)
     result: list[tuple[str, str, int, int, str]] = []
 
     for gene in model.all_genes.values():
-        for isoform in gene.isoforms.values():
-            for exon in isoform.exons:
-                result.append((exon.chromosome, exon.strand, exon.minpos, exon.maxpos, isoform.id))
+        for transcript in gene.transcripts.values():
+            for exon in transcript.exons:
+                result.append(
+                    (exon.chromosome, exon.strand, exon.minpos, exon.maxpos, transcript.id)
+                )
 
     return result
 
@@ -382,7 +384,7 @@ def benchmark_gff_path(
 
     try:
         results["gene_model"] = _measure_loader(
-            lambda p: GeneModel(str(p), verbose=False),
+            lambda p: GeneModel.from_gff(str(p), verbose=False),
             gff_path,
             iterations=iterations,
             rows=rows,

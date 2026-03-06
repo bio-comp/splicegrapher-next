@@ -6,6 +6,7 @@ import pytest
 
 import SpliceGrapher.formats.polars_gff as polars_gff
 from SpliceGrapher.core.enums import RecordType, Strand
+from SpliceGrapher.formats.gene_model import CDS, Exon, Gene, GeneModel, Transcript
 
 
 def test_parse_gff_attributes_ignores_malformed_tokens_and_splits_once() -> None:
@@ -93,3 +94,44 @@ def test_iter_gff_records_rejects_unknown_strand() -> None:
                 ["chr1\tsource\tgene\t1\t10\t.\t?\t.\tID=GENE1;Name=GENE1\n"]
             )
         )
+
+
+def _build_gene_model_for_extractor() -> GeneModel:
+    model = GeneModel()
+    model.add_chromosome(1, 100, "chr1")
+    gene = Gene("GENE1", None, 10, 40, "chr1", "+", name="GENE1")
+    transcript = Transcript("TX1", 10, 40, "chr1", "+")
+    transcript.add_exon(Exon(10, 18, "chr1", "+"))
+    transcript.add_exon(Exon(20, 40, "chr1", "+"))
+    transcript.add_cds(CDS(12, 15, "chr1", "+"))
+    transcript.add_cds(CDS(20, 30, "chr1", "+"))
+    gene.add_transcript(transcript)
+    model.add_gene(gene)
+    return model
+
+
+def test_iter_flattened_features_emits_gene_transcript_and_child_rows() -> None:
+    rows = list(polars_gff._iter_flattened_features(_build_gene_model_for_extractor()))
+
+    feature_types = {str(row["feature_type"]) for row in rows}
+    assert {"GENE", "MRNA", "EXON", "CDS"}.issubset(feature_types)
+    assert all(row["gene_id"] == "GENE1" for row in rows)
+
+
+def test_extract_to_dataframe_raises_without_polars(monkeypatch) -> None:
+    def _raise_import_error(name: str):
+        raise ModuleNotFoundError(name)
+
+    monkeypatch.setattr(polars_gff.importlib, "import_module", _raise_import_error)
+
+    with pytest.raises(polars_gff.PolarsNotInstalledError):
+        polars_gff.extract_to_dataframe(_build_gene_model_for_extractor())
+
+
+def test_extract_to_dataframe_builds_expected_schema_when_polars_available() -> None:
+    polars = pytest.importorskip("polars")
+    dataframe = polars_gff.extract_to_dataframe(_build_gene_model_for_extractor())
+
+    assert dataframe.height > 0
+    assert dataframe.schema["chromosome"] == polars.Categorical
+    assert dataframe.schema["start_pos"] == polars.Int64

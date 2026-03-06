@@ -14,13 +14,13 @@ from SpliceGrapher.core.enum_coercion import coerce_enum
 from SpliceGrapher.core.enums import AttrKey, RecordType
 from SpliceGrapher.formats.gene_model import (
     CDS,
+    ISOFORM_TYPE,
     Exon,
     FpUtr,
     Gene,
     GeneModel,
-    Isoform,
-    Mrna,
     TpUtr,
+    Transcript,
     TranscriptRegion,
     feature_sort_key,
 )
@@ -222,7 +222,7 @@ def _get_or_create_gene(
 
 def _build_gene_model_from_db(db: gffutils.FeatureDB) -> GeneModel:
     """Convert a gffutils feature database into a legacy ``GeneModel`` object."""
-    model = GeneModel(None)
+    model = GeneModel()
     transcript_gene = _transcript_gene_map(db)
     gene_records = _extract_gene_records(db)
 
@@ -312,7 +312,15 @@ def _build_gene_model_from_db(db: gffutils.FeatureDB) -> GeneModel:
             str(AttrKey.NAME): transcript_id,
             str(AttrKey.ID): transcript_id,
         }
-        isoform = Isoform(transcript_id, minpos, maxpos, chrom, strand, attr=iso_attr)
+        isoform = Transcript(
+            transcript_id,
+            minpos,
+            maxpos,
+            chrom,
+            strand,
+            attr=iso_attr,
+            feature_type=ISOFORM_TYPE,
+        )
         for exon_feature in exons:
             exon = Exon(
                 exon_feature.start,
@@ -329,7 +337,15 @@ def _build_gene_model_from_db(db: gffutils.FeatureDB) -> GeneModel:
                 str(AttrKey.NAME): transcript_id,
                 str(AttrKey.ID): transcript_id,
             }
-            mrna_record = Mrna(transcript_id, minpos, maxpos, chrom, strand, attr=mrna_attr)
+            mrna_record = Transcript(
+                transcript_id,
+                minpos,
+                maxpos,
+                chrom,
+                strand,
+                attr=mrna_attr,
+                feature_type=RecordType.MRNA,
+            )
             for cds_feature in cds_records:
                 feature_type = _normalize_feature_type(cds_feature.featuretype)
                 cds: TranscriptRegion
@@ -367,15 +383,14 @@ def _build_gene_model_from_db(db: gffutils.FeatureDB) -> GeneModel:
 
 def _iter_transcript_exons(gene: Gene) -> Iterator[tuple[str, list[Exon]]]:
     """Yield transcript IDs and sorted exon lists for intron derivation."""
-    for iso in gene.isoforms.values():
-        exons = sorted(iso.exons, key=feature_sort_key)
+    seen: set[str] = set()
+    for transcript in gene.transcripts.values():
+        if transcript.id in seen:
+            continue
+        seen.add(transcript.id)
+        exons = sorted(transcript.sorted_exons(), key=feature_sort_key)
         if len(exons) > 1:
-            yield iso.id, exons
-
-    for mrna_rec in gene.mrna.values():
-        exons = sorted(mrna_rec.sorted_exons(), key=feature_sort_key)
-        if len(exons) > 1:
-            yield mrna_rec.id, exons
+            yield transcript.id, exons
 
 
 def write_intron_cache(model: GeneModel, outdir: str | Path) -> Path:

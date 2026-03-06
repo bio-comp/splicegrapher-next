@@ -53,4 +53,4 @@ def test_load_gene_models_normalizes_transcript_alias(tmp_path: Path) -> None:
     genes = model.get_all_genes()
     assert len(genes) == 1
     assert genes[0].id == "GENE1"
-    assert "tx1" in genes[0].isoforms
+    assert "tx1" in genes[0].transcripts
