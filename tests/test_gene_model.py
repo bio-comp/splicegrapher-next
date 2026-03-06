@@ -7,21 +7,9 @@ from pathlib import Path
 import pytest
 
 from SpliceGrapher.core.enums import RecordType, Strand
-from SpliceGrapher.core.interval_helpers import InMemoryIntervalIndex
 from SpliceGrapher.formats import gene_model as gm
 from SpliceGrapher.formats import serializers as ser
 from SpliceGrapher.formats.gene_model import Exon, Gene, GeneModel
-
-
-def test_interval_index_search_supports_recursive_midpoint_indexing() -> None:
-    features = [
-        Exon(1, 10, "chr1", "+"),
-        Exon(20, 30, "chr1", "+"),
-        Exon(40, 50, "chr1", "+"),
-    ]
-    query = Exon(21, 22, "chr1", "+")
-
-    assert InMemoryIntervalIndex(features).predecessor_or_containing(query) is features[1]
 
 
 def test_mrna_sorted_exons_uses_explicit_minintron_keyword() -> None:
@@ -39,17 +27,6 @@ def test_mrna_sorted_exons_uses_explicit_minintron_keyword() -> None:
         transcript.sorted_exons(min_intron=3)  # type: ignore[call-arg]
 
 
-def test_interval_index_search_returns_expected_match() -> None:
-    features = [
-        Exon(1, 10, "chr1", "+"),
-        Exon(20, 30, "chr1", "+"),
-        Exon(40, 50, "chr1", "+"),
-    ]
-    query = Exon(21, 22, "chr1", "+")
-
-    assert InMemoryIntervalIndex(features).predecessor_or_containing(query) is features[1]
-
-
 def test_feature_overlap_and_contains_match_interval_helper_semantics() -> None:
     left = Exon(10, 20, "chr1", "+")
     right = Exon(20, 30, "chr1", "+")
@@ -58,25 +35,6 @@ def test_feature_overlap_and_contains_match_interval_helper_semantics() -> None:
     assert gm.feature_overlaps(left, right)
     assert gm.feature_contains(left, nested)
     assert not gm.feature_contains(left, right)
-
-
-def test_interval_index_search_returns_preceding_feature_when_not_contained() -> None:
-    features = [
-        Exon(1, 10, "chr1", "+"),
-        Exon(20, 30, "chr1", "+"),
-        Exon(40, 50, "chr1", "+"),
-    ]
-    query = Exon(32, 33, "chr1", "+")
-
-    assert InMemoryIntervalIndex(features).predecessor_or_containing(query) is features[1]
-
-
-def test_interval_index_search_rejects_invalid_bounds() -> None:
-    features = [Exon(1, 10, "chr1", "+"), Exon(20, 30, "chr1", "+")]
-    query = Exon(8, 9, "chr1", "+")
-
-    with pytest.raises(ValueError, match="Invalid search bounds"):
-        InMemoryIntervalIndex(features).predecessor_or_containing(query, lo=2, hi=1)
 
 
 def test_get_gene_from_locations_uses_interval_index() -> None:

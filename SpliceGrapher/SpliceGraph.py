@@ -5,11 +5,17 @@ Module that encapsulates a splice graph.
 from __future__ import annotations
 
 import sys
-from collections.abc import Iterator
+from collections.abc import Iterable, Iterator
 from typing import TextIO
+
+import structlog
 
 from SpliceGrapher.core.enum_coercion import coerce_enum
 from SpliceGrapher.core.enums import (
+    ALT_SPLICE_EVENT_CODE_BY_NAME,
+    ALT_SPLICE_EVENT_NAME_BY_CODE,
+    AlternativeSplicingEvent,
+    AlternativeSplicingEventName,
     AttrKey,
     EdgeType,
     NodeDisposition,
@@ -26,6 +32,8 @@ from SpliceGrapher.shared.file_utils import ez_open
 from SpliceGrapher.shared.format_utils import list_string
 from SpliceGrapher.shared.process_utils import idFactory
 from SpliceGrapher.shared.progress import ProgressIndicator
+
+LOGGER = structlog.get_logger(__name__)
 
 # Attributes used in standard GFF3 files:
 SOURCE_NAME = "SpliceGraph"
@@ -52,46 +60,45 @@ PUTATIVE_CHILDREN = "putative_children"
 START_CODON_KEY = AttrKey.START_CODON.value
 END_CODON_KEY = AttrKey.END_CODON.value
 
-# Create names and abbreviations for AS forms and map each one to the other
-AS_NAMES = [
-    IR_NAME,
-    ALT5_NAME,
-    ALT3_NAME,
-    ALTB3_NAME,
-    ALTB5_NAME,
-    ES_NAME,
-    ALTI_NAME,
-    ALTT_NAME,
-] = [
-    "Intron Retention",
-    "Alt. 5'",
-    "Alt. 3'",
-    "Alt. B3",
-    "Alt. B5",
-    "Skipped Exon",
-    "Alt. Init.",
-    "Alt. Term.",
-]
+# Alternative splicing event names and abbreviations are defined canonically in core.enums.
+IR_NAME = AlternativeSplicingEventName.IR.value
+ALT5_NAME = AlternativeSplicingEventName.ALT5.value
+ALT3_NAME = AlternativeSplicingEventName.ALT3.value
+ALTB3_NAME = AlternativeSplicingEventName.ALTB3.value
+ALTB5_NAME = AlternativeSplicingEventName.ALTB5.value
+ES_NAME = AlternativeSplicingEventName.ES.value
+ALTI_NAME = AlternativeSplicingEventName.ALTI.value
+ALTT_NAME = AlternativeSplicingEventName.ALTT.value
+AS_NAMES = [event_name.value for event_name in AlternativeSplicingEventName]
 
-AS_ABBREVS = [
-    IR_ABBREV,
-    ALT5_ABBREV,
-    ALT3_ABBREV,
-    ALTB3_ABBREV,
-    ALTB5_ABBREV,
-    ES_ABBREV,
-    ALTI_ABBREV,
-    ALTT_ABBREV,
-] = ["IR", "A5", "A3", "AB3", "AB5", "SE", "AI", "AT"]
-AS_ABBREV_SET = set(AS_ABBREVS)
+IR_ABBREV = AlternativeSplicingEvent.IR.value
+ALT5_ABBREV = AlternativeSplicingEvent.ALT5.value
+ALT3_ABBREV = AlternativeSplicingEvent.ALT3.value
+ALTB3_ABBREV = AlternativeSplicingEvent.ALTB3.value
+ALTB5_ABBREV = AlternativeSplicingEvent.ALTB5.value
+ES_ABBREV = AlternativeSplicingEvent.ES.value
+ALTI_ABBREV = AlternativeSplicingEvent.ALTI.value
+ALTT_ABBREV = AlternativeSplicingEvent.ALTT.value
+AS_ABBREVS = [event.value for event in AlternativeSplicingEvent]
+AS_ABBREV_SET = {event.value for event in AlternativeSplicingEvent}
 
-EVENT_NAME = dict([(AS_ABBREVS[i], AS_NAMES[i]) for i in range(len(AS_NAMES))])
-EVENT_ABBREV = dict([(AS_NAMES[i], AS_ABBREVS[i]) for i in range(len(AS_NAMES))])
+EVENT_NAME = {
+    event.value: ALT_SPLICE_EVENT_NAME_BY_CODE[event].value for event in AlternativeSplicingEvent
+}
+EVENT_ABBREV = {
+    event_name.value: event.value for event_name, event in ALT_SPLICE_EVENT_CODE_BY_NAME.items()
+}
 
 ALT_35_NAMES = [ALT3_NAME, ALT5_NAME, ALTB3_NAME, ALTB5_NAME]
 ALT_35_ABBREVS = [ALT3_ABBREV, ALT5_ABBREV, ALTB3_ABBREV, ALTB5_ABBREV]
 NON_35_NAMES = set(AS_NAMES) - set(ALT_35_NAMES)
-NON_35_ABBREVS = set(AS_ABBREVS) - set(ALT_35_ABBREVS)
+NON_35_EVENTS = set(AlternativeSplicingEvent) - {
+    AlternativeSplicingEvent.ALT3,
+    AlternativeSplicingEvent.ALT5,
+    AlternativeSplicingEvent.ALTB3,
+    AlternativeSplicingEvent.ALTB5,
+}
+NON_35_ABBREVS = {event.value for event in NON_35_EVENTS}
 
 # Dispositions for nodes in a graph:
 DISPOSITION_KEY = AttrKey.DISPOSITION.value
@@ -127,55 +134,76 @@ VALID_STRANDS = [Strand.PLUS.value, Strand.MINUS.value]
 
 # ========================================================================
 # Function definitions
-def acceptor(node):
+def _coerce_alt_splicing_event(
+    form: str | AlternativeSplicingEvent | AlternativeSplicingEventName,
+) -> AlternativeSplicingEvent:
+    if isinstance(form, AlternativeSplicingEvent):
+        return form
+    if isinstance(form, AlternativeSplicingEventName):
+        return ALT_SPLICE_EVENT_CODE_BY_NAME[form]
+
+    normalized = form.strip()
+    if not normalized:
+        raise ValueError("Alternative splicing form cannot be empty")
+
+    try:
+        return AlternativeSplicingEvent(normalized)
+    except ValueError:
+        try:
+            return ALT_SPLICE_EVENT_CODE_BY_NAME[AlternativeSplicingEventName(normalized)]
+        except ValueError as exc:
+            raise ValueError(f"Unknown alternative splicing form: {form}") from exc
+
+
+def acceptor(node: SpliceGraphNode) -> int:
     """Returns the strand-adjusted position at the start of the acceptor dimer."""
     return node.minpos - 2 if node.strand == "+" else node.maxpos
 
 
-def containsEdge(node, edge):
+def containsEdge(node: SpliceGraphNode, edge: Edge) -> bool:
     """Returns true if the Node contains the given Edge; false otherwise.  Note
     that the edge must be completely contained within the node (<,>)."""
     return interval_contains(node, edge, strict=True)
 
 
-def containsNode(edge, node):
+def containsNode(edge: Edge, node: SpliceGraphNode) -> bool:
     """Returns true if the Edge contains the given Node; false otherwise.  Note
     that the node must be completely contained within the edge (<,>)."""
     return interval_contains(edge, node, strict=True)
 
 
-def childEdges(n):
+def childEdges(n: SpliceGraphNode) -> set[Edge]:
     """Returns a set of child edges for a node."""
-    return set([Edge(n, c) for c in n.children])
+    return {Edge(n, c) for c in n.children}
 
 
-def donor(node):
+def donor(node: SpliceGraphNode) -> int:
     """Returns the strand-adjusted position at the start of the donor dimer."""
     return node.maxpos if node.strand == "+" else node.minpos - 2
 
 
-def edgeSet(G):
+def edgeSet(G: SpliceGraph) -> set[Edge]:
     """Returns a complete set of edges found in splice graph G.
     This includes duplicate edges between distinct nodes as found
     in alternate 3'/5' events."""
-    result = set([])
+    result: set[Edge] = set()
     for n in G.nodeDict.values():
         result.update(childEdges(n))
     return result
 
 
-def intronSet(G):
+def intronSet(G: SpliceGraph) -> set[tuple[int, int]]:
     """Returns the set of distinct edges found in a splice graph.
     This does not include any duplicate edges."""
-    return set([(e.minpos, e.maxpos) for e in edgeSet(G)])
+    return {(edge.minpos, edge.maxpos) for edge in edgeSet(G)}
 
 
-def overlap(a, b):
+def overlap(a: SpliceGraphNode, b: SpliceGraphNode) -> bool:
     """Returns true if the two nodes overlap and are distinct; false otherwise."""
     return a.id != b.id and intervals_overlap(a, b, inclusive=False)
 
 
-def overlapsAll(A, nodeList):
+def overlapsAll(A: SpliceGraphNode, nodeList: Iterable[SpliceGraphNode]) -> bool:
     """Returns true if node A overlaps all nodes in the given node list; false otherwise."""
     for n in nodeList:
         if not overlap(A, n):
@@ -183,58 +211,75 @@ def overlapsAll(A, nodeList):
     return True
 
 
-def parentEdges(n):
+def parentEdges(n: SpliceGraphNode) -> set[Edge]:
     """Returns a set of parent edges for a node."""
-    return set([Edge(p, n) for p in n.parents])
+    return {Edge(p, n) for p in n.parents}
 
 
 # ------------------------------------------------------------------------
 # AS annotation functions:
-def altSiteEventList(nodes, siteType, verbose=False):
+def altSiteEventList(
+    nodes: Iterable[SpliceGraphNode],
+    siteType: str | AlternativeSplicingEvent | AlternativeSplicingEventName,
+    verbose: bool = False,
+) -> list[set[SpliceGraphNode]]:
     """Returns a list of alt. 3' or alt. 5' events.  Each element consists
     of a set of nodes involved in the same event.  Note: assumes the graph's
     nodes have already been annotated (see detectAltAcceptor and detectAltDonor)."""
-    if siteType not in [ALT3_ABBREV, ALT5_ABBREV]:
-        raise ValueError("altNodeList called using non-alternative site type: %s" % siteType)
+    site_event = _coerce_alt_splicing_event(siteType)
+    if site_event not in {AlternativeSplicingEvent.ALT3, AlternativeSplicingEvent.ALT5}:
+        raise ValueError(f"altNodeList called using non-alternative site type: {siteType}")
 
-    def setString(s):
-        return ",".join(["%s" % n.id for n in s])
+    def set_string(s: set[SpliceGraphNode]) -> str:
+        return ",".join(n.id for n in s)
 
-    def neighborNodes(n):
-        return set(n.parents) if siteType == ALT3_ABBREV else set(n.children)
+    def neighbor_nodes(n: SpliceGraphNode) -> set[SpliceGraphNode]:
+        return set(n.parents) if site_event == AlternativeSplicingEvent.ALT3 else set(n.children)
 
     # Find nodes annotated with the given event
-    eventNodes = [n for n in nodes if siteType in n.altForms()]
+    eventNodes = [n for n in nodes if site_event in n.altFormSet]
     if not eventNodes:
         return []
     if verbose:
-        modifier = "parents" if siteType == ALT3_ABBREV else "children"
-        sys.stderr.write("\naltSiteEventList found %d %s nodes:\n" % (len(eventNodes), siteType))
+        modifier = "parents" if site_event == AlternativeSplicingEvent.ALT3 else "children"
+        LOGGER.debug(
+            "alt_site_event_list_found_nodes",
+            count=len(eventNodes),
+            site_type=site_event.value,
+        )
         for n in eventNodes:
-            sys.stderr.write("  %s\n" % n)
-        sys.stderr.write("\n")
+            LOGGER.debug("alt_site_event_list_node", node=str(n))
 
     # Sorting nodes ensures that overlapping nodes will
     # not be stored in distinct sets to be merged later
     eventNodes.sort(key=lambda node: (node.minpos, node.maxpos, node.id))
-    eventList = []
+    eventList: list[set[SpliceGraphNode]] = []
     overlap_index = InMemoryIntervalIndex(eventNodes)
-    stored = set()
+    stored: set[SpliceGraphNode] = set()
     for n in eventNodes:
-        eset = set([n])
+        eset = {n}
         # Grab neighboring nodes (share an edge)
-        adj_n = neighborNodes(n)
+        adj_n = neighbor_nodes(n)
         if verbose:
-            sys.stderr.write("  Node %s has %s %s\n" % (n.id, modifier, setString(adj_n)))
+            LOGGER.debug(
+                "alt_site_event_list_neighbors",
+                node_id=n.id,
+                modifier=modifier,
+                neighbors=set_string(adj_n),
+            )
 
         # Find other nodes with the same annotation that overlap the current one
         for m in overlap_index.overlaps(n, inclusive=False):
             if m == n or not overlap(m, n):
                 continue
             if verbose:
-                sys.stderr.write("  %s overlaps %s\n" % (n.id, m.id))
+                LOGGER.debug(
+                    "alt_site_event_list_overlap_candidate",
+                    node_id=n.id,
+                    candidate_id=m.id,
+                )
             # Grab other node's neighbors
-            adj_m = neighborNodes(m)
+            adj_m = neighbor_nodes(m)
 
             # If either node overlaps all of the other's parents (alt3)
             # or children (alt5), they are not part of the same event:
@@ -244,35 +289,65 @@ def altSiteEventList(nodes, siteType, verbose=False):
             if not neighborsContained:
                 eset.add(m)
             elif verbose:
-                sys.stderr.write("    %s overlaps %s %s (or vice versa)\n" % (n, m, modifier))
+                LOGGER.debug(
+                    "alt_site_event_list_neighbor_containment_excluded",
+                    node=str(n),
+                    candidate=str(m),
+                    modifier=modifier,
+                )
 
         # If the nodes overlapping the current node also overlap
         # distinct other nodes, merge the events into one set
         if verbose:
-            sys.stderr.write("  %s event set: %s\n" % (n.id, setString(eset)))
+            LOGGER.debug(
+                "alt_site_event_list_event_set",
+                node_id=n.id,
+                event_set=set_string(eset),
+            )
         for e in eventList:
             if e & eset:
                 if verbose:
-                    sys.stderr.write("  Merging %s with %s\n" % (setString(eset), setString(e)))
+                    LOGGER.debug(
+                        "alt_site_event_list_merge_sets",
+                        event_set=set_string(eset),
+                        existing_set=set_string(e),
+                    )
                 e.update(eset)
                 stored.update(eset)
                 if verbose:
-                    sys.stderr.write("  --> %s\n" % setString(e))
+                    LOGGER.debug(
+                        "alt_site_event_list_merged_set",
+                        merged_set=set_string(e),
+                    )
                 break
             elif verbose:
-                sys.stderr.write("    %s does not intersect %s\n" % (setString(eset), setString(e)))
+                LOGGER.debug(
+                    "alt_site_event_list_no_intersection",
+                    event_set=set_string(eset),
+                    existing_set=set_string(e),
+                )
 
         if n not in stored:
             if verbose:
-                sys.stderr.write("  Storing new event set %s\n" % setString(eset))
+                LOGGER.debug(
+                    "alt_site_event_list_store_new_set",
+                    event_set=set_string(eset),
+                )
             eventList.append(eset)
 
     if verbose:
-        sys.stderr.write("Final result: %s\n" % ";".join([setString(e) for e in eventList]))
+        LOGGER.debug(
+            "alt_site_event_list_final",
+            result=";".join([set_string(e) for e in eventList]),
+        )
     return eventList
 
 
-def detectAltAcceptor(n, nodes, edges):
+def detectAltAcceptor(
+    n: SpliceGraphNode,
+    nodes: list[SpliceGraphNode],
+    edges: set[Edge],
+) -> None:
     """Looks for evidence that identifies the given node as an alternate acceptor."""
     # Inference rules:
     #  - Establish set of all nodes that overlap the given one and are not graph roots
@@ -283,19 +358,22 @@ def detectAltAcceptor(n, nodes, edges):
     #    this one, mark it as an alternate acceptor
     if not n.parents:
         return
-    allOverlaps = set([o for o in nodes if o.parents and overlap(o, n)])
-    containedEdges = set([e for e in edges if containsEdge(n, e)])
-    flankingNodes = set([e.child for e in containedEdges if overlapsAll(n, e.child.parents)])
-    parentOverlaps = set([o for o in nodes if overlapsAll(o, n.parents)])
+    allOverlaps = {o for o in nodes if o.parents and overlap(o, n)}
+    containedEdges = {e for e in edges if containsEdge(n, e)}
+    flankingNodes = {e.child for e in containedEdges if overlapsAll(n, e.child.parents)}
+    parentOverlaps = {o for o in nodes if overlapsAll(o, n.parents)}
     overlapSet = allOverlaps - parentOverlaps - flankingNodes
 
     for o in overlapSet:
         if o.acceptorEnd() != n.acceptorEnd():
-            n.addAltForm(ALT3_ABBREV)
+            n.addAltForm(AlternativeSplicingEvent.ALT3)
             return
 
 
-def detectAltBoth(nodes, verbose=False):
+def detectAltBoth(
+    nodes: list[SpliceGraphNode],
+    verbose: bool = False,
+) -> None:
     """Looks for evidence of simultaneous 3'/5' events (alt. both).  Assumes alt. 3' and
     alt. 5' nodes have already been identified."""
     # Using 5' events as a reference...
@@ -330,28 +408,33 @@ def detectAltBoth(nodes, verbose=False):
     # apply is: any node within an alt 3' group that connects to a unique
     # donor that is not shared with any other member of that group becomes
     # an alt. both event.
-    alt5Events = altSiteEventList(nodes, ALT5_ABBREV, verbose=verbose)
+    alt5Events = altSiteEventList(nodes, AlternativeSplicingEvent.ALT5, verbose=verbose)
     for event in alt5Events:
         for n in event:
-            nodeAcceptors = set([c.acceptorEnd() for c in n.children])
-            otherAcceptors = set([c.acceptorEnd() for m in event for c in m.children if m != n])
+            nodeAcceptors = {c.acceptorEnd() for c in n.children}
+            otherAcceptors = {c.acceptorEnd() for m in event for c in m.children if m != n}
             shared = nodeAcceptors & otherAcceptors
             if not shared:
-                n.removeAltForm(ALT5_ABBREV)
-                n.addAltForm(ALTB5_ABBREV)
+                n.removeAltForm(AlternativeSplicingEvent.ALT5)
+                n.addAltForm(AlternativeSplicingEvent.ALTB5)
 
-    alt3Events = altSiteEventList(nodes, ALT3_ABBREV)
+    alt3Events = altSiteEventList(nodes, AlternativeSplicingEvent.ALT3)
     for event in alt3Events:
         for n in event:
-            nodeDonors = set([c.donorEnd() for c in n.parents])
-            otherDonors = set([c.donorEnd() for m in event for c in m.parents if m != n])
+            nodeDonors = {c.donorEnd() for c in n.parents}
+            otherDonors = {c.donorEnd() for m in event for c in m.parents if m != n}
             shared = nodeDonors & otherDonors
             if not shared:
-                n.removeAltForm(ALT3_ABBREV)
-                n.addAltForm(ALTB3_ABBREV)
+                n.removeAltForm(AlternativeSplicingEvent.ALT3)
+                n.addAltForm(AlternativeSplicingEvent.ALTB3)
 
 
-def detectAltDonor(n, nodes, edges, verbose=False):
+def detectAltDonor(
+    n: SpliceGraphNode,
+    nodes: list[SpliceGraphNode],
+    edges: set[Edge],
+    verbose: bool = False,
+) -> None:
     """Looks for evidence that identifies the given node as an alternate donor."""
     # Inference rules:
     #  - Establish set of all nodes that overlap the given one
@@ -363,33 +446,33 @@ def detectAltDonor(n, nodes, edges, verbose=False):
     #    this one, mark it as an alternate acceptor
     if not n.children:
         return
-    allOverlaps = set([o for o in nodes if o.children and overlap(o, n)])
-    containedEdges = set([e for e in edges if containsEdge(n, e)])
-    flankingNodes = set([e.parent for e in containedEdges if overlapsAll(n, e.parent.children)])
-    childOverlaps = set([o for o in nodes if overlapsAll(o, n.children)])
+    allOverlaps = {o for o in nodes if o.children and overlap(o, n)}
+    containedEdges = {e for e in edges if containsEdge(n, e)}
+    flankingNodes = {e.parent for e in containedEdges if overlapsAll(n, e.parent.children)}
+    childOverlaps = {o for o in nodes if overlapsAll(o, n.children)}
     overlapSet = allOverlaps - childOverlaps - flankingNodes
 
     for o in overlapSet:
         if o.donorEnd() != n.donorEnd():
-            n.addAltForm(ALT5_ABBREV)
+            n.addAltForm(AlternativeSplicingEvent.ALT5)
             return
 
 
-def detectRetainedIntron(n, edges):
+def detectRetainedIntron(n: SpliceGraphNode, edges: set[Edge]) -> None:
     """Looks for evidence in the edge list that identifies the given node as a retained intron."""
     for e in edges:
         if containsEdge(n, e):
-            n.addAltForm(IR_ABBREV)
+            n.addAltForm(AlternativeSplicingEvent.IR)
             return
 
 
-def detectSkippedExon(n, edges):
+def detectSkippedExon(n: SpliceGraphNode, edges: set[Edge]) -> None:
     """Looks for evidence in the edge list that identifies the given node as a skipped exon."""
-    annotation = ES_ABBREV
+    annotation = AlternativeSplicingEvent.ES
     if not n.parents:
-        annotation = ALTI_ABBREV
+        annotation = AlternativeSplicingEvent.ALTI
     if not n.children:
-        annotation = ALTT_ABBREV
+        annotation = AlternativeSplicingEvent.ALTT
     for e in edges:
         if e.minpos < n.minpos and n.maxpos < e.maxpos:
             n.addAltForm(annotation)
@@ -398,7 +481,7 @@ def detectSkippedExon(n, edges):
 
 # ------------------------------------------------------------------------
 # Graph manipulation functions:
-def commonAS(A, B):
+def commonAS(A: SpliceGraph, B: SpliceGraph) -> SpliceGraph:
     """Returns a graph that contains just the nodes and AS
     events found in both A and B.  Uses the fact that
     A^B = AUB - A\\B - B\\A"""
@@ -408,7 +491,7 @@ def commonAS(A, B):
     return graphMinusAS(subgraph, BminA)
 
 
-def diffAS(A, B):
+def diffAS(A: SpliceGraph, B: SpliceGraph) -> list[SpliceGraph]:
     """Detects alternative splicing differences between two graphs.
     Returns two graphs: one that contains the nodes in A with AS not
     found in B and another that contains nodes in B without events in A."""
@@ -447,7 +530,7 @@ def getFirstGraph(f: str | TextIO, *, annotate: bool = False, verbose: bool = Fa
         raise ValueError("No graph found in %s" % f)
 
 
-def graphMinusAS(A, B):
+def graphMinusAS(A: SpliceGraph, B: SpliceGraph) -> SpliceGraph:
     """Detects alternative splicing differences between two graphs.
     Returns a graph that contains just the nodes in A that are
     annotated with AS not found in B.  Note that if A is a subgraph
@@ -457,13 +540,13 @@ def graphMinusAS(A, B):
     nodesA = [n for n in A.resolvedNodes() if n.hasAS()]
     result = SpliceGraph(name=A.getName(), chromosome=A.chromosome, strand=A.strand)
     for a in nodesA:
-        aAltSet = set(a.altForms())
+        aAltSet = set(a.altFormSet)
         if not aAltSet:
             continue
 
         b = B.getNode(a.start, a.end)
         if b:
-            bAltSet = set(b.altForms())
+            bAltSet = set(b.altFormSet)
             aAltSet = aAltSet - bAltSet
             if not aAltSet:
                 continue
@@ -633,11 +716,11 @@ def updateRoot(A: SpliceGraph, B: SpliceGraph, *, uniqueRoot: bool = False) -> N
 
 # ========================================================================
 # Class definitions
-class Edge(object):
+class Edge:
     """Encapsulates an edge in the graph.  These are not stored with a splice
     graph, but used for splice graph creation and annotation."""
 
-    def __init__(self, parent, child):
+    def __init__(self, parent: SpliceGraphNode, child: SpliceGraphNode) -> None:
         self.parent = parent
         self.child = child
         self.pos = sorted([parent.minpos, parent.maxpos, child.minpos, child.maxpos])
@@ -645,8 +728,10 @@ class Edge(object):
         self.minpos = self.pos[1]
         self.maxpos = self.pos[2]
 
-    def __eq__(self, o):
+    def __eq__(self, o: object) -> bool:
         # Using minpos/maxpos allows an edge to be compared with an exon.
+        if not isinstance(o, Edge):
+            return NotImplemented
         return (
             self.minpos == o.minpos
             and self.maxpos == o.maxpos
@@ -654,51 +739,44 @@ class Edge(object):
             and self.pos[3] == o.pos[3]
         )
 
-    def __cmp__(self, o):
-        result = self.pos[0] - o.pos[0]
-        if not result:
-            result = self.pos[1] - o.pos[1]
-        if not result:
-            result = self.pos[2] - o.pos[2]
-        if not result:
-            result = self.pos[3] - o.pos[3]
-        return result
+    def __lt__(self, o: Edge) -> bool:
+        return tuple(self.pos) < tuple(o.pos)
 
-    def __getitem__(self, i):
+    def __getitem__(self, i: int) -> int:
         return self.pos[i]
 
-    def __hash__(self):
-        return self.__str__().__hash__()
+    def __hash__(self) -> int:
+        return hash(str(self))
 
-    def __len__(self):
+    def __len__(self) -> int:
         return self.maxpos - self.minpos
 
-    def overlaps(self, o):
+    def overlaps(self, o: Edge) -> bool:
         """Returns true if the edge portions overlap; false otherwise."""
         return self.maxpos > o.minpos and self.minpos < o.maxpos
 
-    def sameEdge(self, o):
+    def sameEdge(self, o: Edge) -> bool:
         """Returns true if the edge portions are the same; false otherwise."""
         return self.minpos == o.minpos and self.maxpos == o.maxpos
 
-    def __repr__(self):
-        return "%d,%d,%d,%d" % tuple(self.pos)
+    def __repr__(self) -> str:
+        return f"{self.pos[0]},{self.pos[1]},{self.pos[2]},{self.pos[3]}"
 
-    def __str__(self):
-        return "%d,%d" % tuple(self.pos[1:3])
+    def __str__(self) -> str:
+        return f"{self.pos[1]},{self.pos[2]}"
 
 
-class NullNode(object):
+class NullNode:
     """Null node object encapsulates the most basic information about a node."""
 
-    def __init__(self, start, end):
+    def __init__(self, start: int, end: int) -> None:
         self.start = start
         self.end = end
         self.minpos = min(start, end)
         self.maxpos = max(start, end)
 
 
-class SpliceGraphNode(object):
+class SpliceGraphNode:
     """This is the node class to use for constructing splice graphs for GFF input/output."""
 
     def __init__(
@@ -721,8 +799,8 @@ class SpliceGraphNode(object):
         )
         self.parents: list[SpliceGraphNode] = list(parents) if parents is not None else []
         self.children: list[SpliceGraphNode] = list(children) if children is not None else []
-        self.attrs: dict[str, object] = {}
-        self.altFormSet: set[str] = set()
+        self.attrs: dict[str, str | set[int]] = {}
+        self.altFormSet: set[AlternativeSplicingEvent] = set()
         self.isoformSet: set[str] = set()
         # Added for adjustable ranges
         self.origStart = self.start
@@ -732,14 +810,21 @@ class SpliceGraphNode(object):
         """Returns the position of the exon's 5' (upstream) end."""
         return self.start
 
-    def addAltForm(self, form):
+    def _sync_alt_form_attr(self) -> None:
+        self.attrs[AS_KEY] = ",".join(form.value for form in self.altFormSet)
+
+    def addAltForm(
+        self,
+        form: str | AlternativeSplicingEvent | AlternativeSplicingEventName,
+    ) -> None:
         """Adds an AS form to the node's list of forms."""
-        if len(form.strip()) == 0:
+        if isinstance(form, str) and not form.strip():
             return
-        self.altFormSet.add(form)
+        event = _coerce_alt_splicing_event(form)
+        self.altFormSet.add(event)
         for x in self.altFormSet:
-            assert len(x) > 0
-        self.attrs[AS_KEY] = ",".join(self.altFormSet)
+            assert len(x.value) > 0
+        self._sync_alt_form_attr()
 
     def addAttribute(self, key, value):
         """Adds the given key-value pair to a node's attribute list.  If the
@@ -804,8 +889,8 @@ class SpliceGraphNode(object):
     def altForms(self):
         """Returns a list of AS forms associated with the node."""
         for x in self.altFormSet:
-            assert len(x) > 0
-        return list(self.altFormSet)
+            assert len(x.value) > 0
+        return [form.value for form in self.altFormSet]
 
     def altFormString(self):
         """Returns a string of AS forms associated with the node."""
@@ -836,13 +921,11 @@ class SpliceGraphNode(object):
     def branchingFactor(self):
         return max(len(self.parents), len(self.children))
 
-    def __cmp__(self, other):
-        """Permits sorting based on minimum node position.  Ties are broken by the
-        shorter of the two nodes."""
+    def __lt__(self, other: SpliceGraphNode) -> bool:
+        """Permits sorting based on minimum node position; ties use max position."""
         if self.minpos == other.minpos:
-            return self.maxpos - other.maxpos
-        else:
-            return self.minpos - other.minpos
+            return self.maxpos < other.maxpos
+        return self.minpos < other.minpos
 
     def codons(self, codonType):
         """Returns a list of codon positions within the node, or
@@ -873,8 +956,10 @@ class SpliceGraphNode(object):
         """Returns true if the node is downstream of the position; false otherwise."""
         return (self.minpos > pos) if self.strand == "+" else (self.maxpos < pos)
 
-    def __eq__(self, other):
+    def __eq__(self, other: object) -> bool:
         """Node equality is based solely on its start/end positions."""
+        if not isinstance(other, (SpliceGraphNode, NullNode)):
+            return NotImplemented
         return self.minpos == other.minpos and self.maxpos == other.maxpos
 
     def endCodons(self):
@@ -917,8 +1002,8 @@ class SpliceGraphNode(object):
     def hasAS(self):
         """Returns true if the node has evidence of AS; false otherwise."""
         for x in self.altFormSet:
-            assert len(x) > 0
-        return len(self.altFormSet & AS_ABBREV_SET) > 0
+            assert len(x.value) > 0
+        return bool(self.altFormSet)
 
     def hasDisposition(self, disposition):
         """Returns true if the node has the given disposition; false otherwise."""
@@ -934,14 +1019,14 @@ class SpliceGraphNode(object):
     def isAltAcceptor(self):
         """Returns true if the node represents a retained intron; false otherwise."""
         for x in self.altFormSet:
-            assert len(x) > 0
-        return ALT3_ABBREV in self.altFormSet
+            assert len(x.value) > 0
+        return AlternativeSplicingEvent.ALT3 in self.altFormSet
 
     def isAltDonor(self):
         """Returns true if the node represents a retained intron; false otherwise."""
         for x in self.altFormSet:
-            assert len(x) > 0
-        return ALT5_ABBREV in self.altFormSet
+            assert len(x.value) > 0
+        return AlternativeSplicingEvent.ALT5 in self.altFormSet
 
     def isKnown(self):
         """Returns true if the node is known from the gene model; false otherwise."""
@@ -958,8 +1043,8 @@ class SpliceGraphNode(object):
     def isRetainedIntron(self):
         """Returns true if the node represents a retained intron; false otherwise."""
         for x in self.altFormSet:
-            assert len(x) > 0
-        return IR_ABBREV in self.altFormSet
+            assert len(x.value) > 0
+        return AlternativeSplicingEvent.IR in self.altFormSet
 
     def isRoot(self):
         """Returns true if the node is a root node; false otherwise."""
@@ -968,8 +1053,8 @@ class SpliceGraphNode(object):
     def isSkippedExon(self):
         """Returns true if the node represents a retained intron; false otherwise."""
         for x in self.altFormSet:
-            assert len(x) > 0
-        return ES_ABBREV in self.altFormSet
+            assert len(x.value) > 0
+        return AlternativeSplicingEvent.ES in self.altFormSet
 
     def isUnresolved(self):
         """Returns true if the node is unresolved; false otherwise."""
@@ -1006,12 +1091,18 @@ class SpliceGraphNode(object):
         except KeyError:
             return set()
 
-    def removeAltForm(self, form):
+    def removeAltForm(
+        self,
+        form: str | AlternativeSplicingEvent | AlternativeSplicingEventName,
+    ) -> None:
         """Adds an AS form to the node's list of forms."""
-        self.altFormSet.discard(form)
+        if isinstance(form, str) and not form.strip():
+            return
+        event = _coerce_alt_splicing_event(form)
+        self.altFormSet.discard(event)
         for x in self.altFormSet:
-            assert len(x) > 0
-        self.attrs[AS_KEY] = ",".join(self.altFormSet)
+            assert len(x.value) > 0
+        self._sync_alt_form_attr()
 
     def removeChild(self, child):
         """Removes the child from this node's list."""
@@ -1038,26 +1129,35 @@ class SpliceGraphNode(object):
                 nodeString(self.children),
             )
 
-    def setUnresolved(self, preserve=[], acceptors=[], donors=[]):
+    def setUnresolved(
+        self,
+        preserve: list[str] | None = None,
+        acceptors: list[int] | None = None,
+        donors: list[int] | None = None,
+    ) -> None:
         """
         Makes a node unresolved by setting its disposition attribute and
         by removing edges between the node and parents and children in the graph.
         Caller may preserve some display edges by listing nodes in a preserve list.
         """
-        self.addAttribute(DISPOSITION_KEY, UNRESOLVED_NODE)
-        if acceptors:
-            self.addAttribute(ACCEPTORS_KEY, list_string(acceptors))
-        if donors:
-            self.addAttribute(DONORS_KEY, list_string(donors))
+        preserve_nodes = preserve or []
+        acceptor_sites = acceptors or []
+        donor_sites = donors or []
 
-        for c in self.children:
-            if c.id in preserve:
+        self.addAttribute(DISPOSITION_KEY, UNRESOLVED_NODE)
+        if acceptor_sites:
+            self.addAttribute(ACCEPTORS_KEY, list_string(acceptor_sites))
+        if donor_sites:
+            self.addAttribute(DONORS_KEY, list_string(donor_sites))
+
+        for c in list(self.children):
+            if c.id in preserve_nodes:
                 continue
             c.removeParent(self)
             self.children.remove(c)
 
-        for p in self.parents:
-            if p.id in preserve:
+        for p in list(self.parents):
+            if p.id in preserve_nodes:
                 continue
             p.removeChild(self)
             self.parents.remove(p)
@@ -1100,7 +1200,7 @@ class SpliceGraphNode(object):
         return (self.maxpos < pos) if self.strand == "+" else (self.minpos > pos)
 
 
-class SpliceGraph(object):
+class SpliceGraph:
     """Main class for storing splice graph data."""
 
     def __init__(self, name, chromosome, strand):
@@ -1183,9 +1283,9 @@ class SpliceGraph(object):
 
     def altForms(self):
         """Returns a set of all AS forms found in the graph."""
-        result = set()
+        result: set[str] = set()
         for n in self.nodeDict.values():
-            result.update(n.altFormSet)
+            result.update(n.altForms())
         for x in result:
             assert len(x) > 0
         return result
@@ -1199,7 +1299,7 @@ class SpliceGraph(object):
             n.altFormSet = set()
             n.attrs[AS_KEY] = ""
             for x in n.altFormSet:
-                assert len(x) > 0
+                assert len(x.value) > 0
 
             # Assign annotations to the node
             detectSkippedExon(n, edges)
@@ -1227,13 +1327,11 @@ class SpliceGraph(object):
 
         return min(branches), max(branches), avg
 
-    def __cmp__(self, other):
-        """Permits sorting graphs based on minimum position.  Ties are broken by the
-        shorter of the two graphs."""
+    def __lt__(self, other: SpliceGraph) -> bool:
+        """Permits sorting graphs based on minimum position; ties use max position."""
         if self.minpos == other.minpos:
-            return self.maxpos - other.maxpos
-        else:
-            return self.minpos - other.minpos
+            return self.maxpos < other.maxpos
+        return self.minpos < other.minpos
 
     def deleteNode(self, n):
         """Removes a node from a graph, along with all edges attached to it.
@@ -1253,7 +1351,9 @@ class SpliceGraph(object):
         Alt. 5'/Alt. 3' events are the only ones with a count greater than 1 and
         are reported using the shortest node involved."""
         result = []
-        alt5Nodes = [n for n in self.resolvedNodes() if ALT5_ABBREV in n.altFormSet]
+        alt5Nodes = [
+            n for n in self.resolvedNodes() if AlternativeSplicingEvent.ALT5 in n.altFormSet
+        ]
         while alt5Nodes:
             n = alt5Nodes.pop()
             others = [o for o in alt5Nodes if o.acceptorEnd() == n.acceptorEnd()]
@@ -1261,9 +1361,18 @@ class SpliceGraph(object):
                 if len(o) < len(n):
                     n = o
                 alt5Nodes.remove(o)
-            result.append((n.start, n.end, ALT5_ABBREV, len(others) + 1))
+            result.append(
+                (
+                    n.start,
+                    n.end,
+                    AlternativeSplicingEvent.ALT5.value,
+                    len(others) + 1,
+                )
+            )
 
-        alt3Nodes = [n for n in self.resolvedNodes() if ALT3_ABBREV in n.altFormSet]
+        alt3Nodes = [
+            n for n in self.resolvedNodes() if AlternativeSplicingEvent.ALT3 in n.altFormSet
+        ]
         while alt3Nodes:
             n = alt3Nodes.pop()
             others = [o for o in alt3Nodes if o.donorEnd() == n.donorEnd()]
@@ -1271,12 +1380,19 @@ class SpliceGraph(object):
                 if len(o) < len(n):
                     n = o
                 alt3Nodes.remove(o)
-            result.append((n.start, n.end, ALT3_ABBREV, len(others) + 1))
+            result.append(
+                (
+                    n.start,
+                    n.end,
+                    AlternativeSplicingEvent.ALT3.value,
+                    len(others) + 1,
+                )
+            )
 
         for n in self.resolvedNodes():
-            for asType in NON_35_ABBREVS:
-                if asType in n.altFormSet:
-                    result.append((n.start, n.end, asType, 1))
+            for as_event in NON_35_EVENTS:
+                if as_event in n.altFormSet:
+                    result.append((n.start, n.end, as_event.value, 1))
 
         return result
 
@@ -1346,12 +1462,12 @@ class SpliceGraph(object):
 
     def getAcceptors(self):
         """Returns a list of distinct acceptor sites in the graph."""
-        result = set([acceptor(n) for n in self.nodeDict.values() if not n.isRoot()])
+        result = {acceptor(n) for n in self.nodeDict.values() if not n.isRoot()}
         return list(result)
 
     def getDonors(self):
         """Returns a list of distinct donor sites in the graph."""
-        result = set([donor(n) for n in self.nodeDict.values() if not n.isLeaf()])
+        result = {donor(n) for n in self.nodeDict.values() if not n.isLeaf()}
         return list(result)
 
     def getNode(self, start, end):
@@ -1447,7 +1563,7 @@ class SpliceGraph(object):
             for n in nodes:
                 curr = graph.addNode(n.id, n.minpos, n.maxpos)
                 curr.attrs = dict(n.attrs)
-                curr.isoformSet = set([name])
+                curr.isoformSet = {name}
                 curr.attrs[ISO_KEY] = ",".join(curr.isoformSet)
                 if prev:
                     graph.addEdge(prev.id, curr.id)
@@ -1591,79 +1707,64 @@ class SpliceGraph(object):
         """Returns true if a is upstream of b; false otherwise."""
         return (a < b) if self.strand == "+" else (b < a)
 
-    def validate(self, halt=False):
+    def validate(self, halt: bool = False) -> str | None:
         """Returns None if the splicegraph is valid; otherwise returns a reason it is invalid."""
-        reason = None
-        allNodes = self.nodeDict.values()
+        reason: str | None = None
+        all_nodes = list(self.nodeDict.values())
         ## allNodes   = self.resolvedNodes()
-        nodeSet = set(allNodes)
-        nodeList = list(nodeSet)
-        allNodeIds = [x.id for x in allNodes]
-        uniqueIds = [x.id for x in nodeSet]
+        node_set = set(all_nodes)
+        node_list = list(node_set)
+        all_node_ids = [node.id for node in all_nodes]
+        unique_ids = [node.id for node in node_set]
         roots = self.getRoots()
         leaves = self.getLeaves()
         if len(roots) == 0 or len(leaves) == 0:
-            reason = "Graph is missing roots or leaves (%d roots, %d leaves)" % (
-                len(roots),
-                len(leaves),
-            )
+            reason = f"Graph is missing roots or leaves ({len(roots)} roots, {len(leaves)} leaves)"
 
-        for n in allNodes:
+        for n in all_nodes:
             if reason:
                 break
             # Detect duplicate nodes: only one will appear in set
-            if n.id not in uniqueIds:
-                other = nodeList[nodeList.index(n)]
-                reason = "Duplicate node %s (%d-%d) matches %s (%d-%d)" % (
-                    n.id,
-                    n.minpos,
-                    n.maxpos,
-                    other.id,
-                    other.minpos,
-                    other.maxpos,
+            if n.id not in unique_ids:
+                other = node_list[node_list.index(n)]
+                reason = (
+                    f"Duplicate node {n.id} ({n.minpos}-{n.maxpos}) matches "
+                    f"{other.id} ({other.minpos}-{other.maxpos})"
                 )
 
             # Detect invalid child/parent ids
             for o in n.children:
-                if o.id not in allNodeIds:
-                    reason = "Node %s: child %s not in graph" % (n.id, o.id)
-                elif o.id not in uniqueIds:
-                    twin = nodeList[nodeList.index(o)]
-                    reason = "Node %s: child %s (%d-%d) is not unique (%s %d-%d)" % (
-                        n.id,
-                        o.id,
-                        o.minpos,
-                        o.maxpos,
-                        twin.id,
-                        twin.minpos,
-                        twin.maxpos,
+                if o.id not in all_node_ids:
+                    reason = f"Node {n.id}: child {o.id} not in graph"
+                elif o.id not in unique_ids:
+                    twin = node_list[node_list.index(o)]
+                    reason = (
+                        f"Node {n.id}: child {o.id} ({o.minpos}-{o.maxpos}) "
+                        f"is not unique ({twin.id} {twin.minpos}-{twin.maxpos})"
                     )
 
             for o in n.parents:
-                if o.id not in allNodeIds:
-                    reason = "Node %s parent %s not in graph" % (n.id, o.id)
-                elif o.id not in uniqueIds:
-                    twin = nodeList[nodeList.index(o)]
-                    reason = "Node %s parent %s (%d-%d) is not unique (%s %d-%d)" % (
-                        n.id,
-                        o.id,
-                        o.minpos,
-                        o.maxpos,
-                        twin.id,
-                        twin.minpos,
-                        twin.maxpos,
+                if o.id not in all_node_ids:
+                    reason = f"Node {n.id} parent {o.id} not in graph"
+                elif o.id not in unique_ids:
+                    twin = node_list[node_list.index(o)]
+                    reason = (
+                        f"Node {n.id} parent {o.id} ({o.minpos}-{o.maxpos}) "
+                        f"is not unique ({twin.id} {twin.minpos}-{twin.maxpos})"
                     )
 
         if reason and halt:
-            import sys
-
-            sys.stderr.write("\n** Error in graph:\n")
-            sys.stderr.write("  %s\n" % "\n  ".join(["%s" % x for x in allNodes]))
-            raise ValueError("Illegal graph:\n%s" % reason)
+            LOGGER.error(
+                "illegal_graph_validation_failed",
+                nodes=[str(node) for node in all_nodes],
+                reason=reason,
+            )
+            raise ValueError(f"Illegal graph:\n{reason}")
         elif reason:
             return reason
+        return None
 
-    def writeGFF(self, fileRef, haltOnError=False):
+    def writeGFF(self, fileRef: str | TextIO, haltOnError: bool = False) -> bool:
         """Writes a splice graph to a file in GFF format.  The file may be given
         either as an output stream or as a file path.
         """
@@ -1671,32 +1772,34 @@ class SpliceGraph(object):
         if reason:
             if haltOnError:
                 raise ValueError(
-                    'Cannot write invalid splice graph %s to file:\n"%s"\n'
-                    % (self.getName(), reason)
+                    f'Cannot write invalid splice graph {self.getName()} to file:\n"{reason}"\n'
                 )
             else:
-                sys.stderr.write(
-                    '** Warning: splice graph for %s is invalid:\n"%s"\n' % (self.getName(), reason)
+                LOGGER.warning(
+                    "writing_invalid_splice_graph",
+                    graph_name=self.getName(),
+                    reason=reason,
                 )
 
         roots = set(self.getRoots())
         other = set(self.nodeDict.values()) - roots
-        newFile = isinstance(fileRef, str)
-        outStream = open(fileRef, "w") if newFile else fileRef
 
-        # First write the graph, then parents, then remaining nodes
-        outStream.write("%s\n" % self.gffString())
-        for p in roots:
-            outStream.write("%s\n" % p.gffString())
-        for o in other:
-            outStream.write("%s\n" % o.gffString())
+        def _write_graph(out_stream: TextIO) -> None:
+            out_stream.write(f"{self.gffString()}\n")
+            for p in roots:
+                out_stream.write(f"{p.gffString()}\n")
+            for o in other:
+                out_stream.write(f"{o.gffString()}\n")
 
-        if newFile:
-            outStream.close()
+        if isinstance(fileRef, str):
+            with open(fileRef, "w") as out_stream:
+                _write_graph(out_stream)
+        else:
+            _write_graph(fileRef)
         return True
 
 
-class SpliceGraphParser(object):
+class SpliceGraphParser:
     """Class that parses a GFF file filled with splice graphs and provides an
     iterator over each graph in the file."""
 
@@ -1728,9 +1831,6 @@ class SpliceGraphParser(object):
         key = self._graph_keys[self.graphId]
         self.graphId += 1
         return self.graphDict[key]
-
-    # Python 2 compatibility alias
-    next = __next__
 
     def __len__(self) -> int:
         """Returns the number of nodes in the graph."""
@@ -1806,7 +1906,7 @@ class SpliceGraphParser(object):
                         elif k == ISO_KEY and attrs[k]:
                             node.addIsoformString(attrs[k])
                         elif k in [START_CODON_KEY, END_CODON_KEY] and attrs[k]:
-                            node.attrs[k] = set([int(x) for x in attrs[k].split(",")])
+                            node.attrs[k] = {int(x) for x in attrs[k].split(",")}
                         elif k not in KNOWN_ATTRS:
                             node.addAttribute(k, attrs[k])
 
