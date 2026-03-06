@@ -6,11 +6,17 @@ import pytest
 
 import SpliceGrapher.SpliceGraph as splice_graph_module
 from SpliceGrapher.SpliceGraph import (
+    ALT3_ABBREV,
+    ALT5_ABBREV,
     GENE_REC,
     SpliceGraph,
     SpliceGraphNode,
     SpliceGraphParser,
+    altSiteEventList,
+    commonAS,
+    diffAS,
     getFirstGraph,
+    graphMinusAS,
     overlap,
 )
 
@@ -159,3 +165,99 @@ def test_overlap_helper_preserves_strict_boundary_behavior() -> None:
 
     assert not overlap(left, touching)
     assert overlap(left, crossing)
+
+
+def _graph_alt_nodes(
+    *,
+    name: str,
+    records: list[tuple[str, int, int, list[str]]],
+) -> SpliceGraph:
+    graph = SpliceGraph(name, "chr1", "+")
+    for node_id, start, end, forms in records:
+        node = graph.addNode(node_id, start, end)
+        for form in forms:
+            node.addAltForm(form)
+    return graph
+
+
+def _alt_signature(graph: SpliceGraph) -> set[tuple[int, int, str]]:
+    return {
+        (node.minpos, node.maxpos, form)
+        for node in graph.resolvedNodes()
+        for form in node.altForms()
+    }
+
+
+def test_graph_minus_as_reports_only_a_specific_events() -> None:
+    graph_a = _graph_alt_nodes(
+        name="A",
+        records=[
+            ("a1", 10, 20, [ALT3_ABBREV]),
+            ("a2", 40, 50, [ALT5_ABBREV]),
+        ],
+    )
+    graph_b = _graph_alt_nodes(
+        name="B",
+        records=[
+            ("b1", 10, 20, [ALT5_ABBREV]),
+            ("b2", 40, 50, [ALT5_ABBREV]),
+        ],
+    )
+
+    minus = graphMinusAS(graph_a, graph_b)
+
+    assert _alt_signature(minus) == {(10, 20, ALT3_ABBREV)}
+
+
+def test_diff_as_is_directional_for_shared_nodes_with_different_as() -> None:
+    graph_a = _graph_alt_nodes(
+        name="A",
+        records=[("a1", 10, 20, [ALT3_ABBREV]), ("a2", 40, 50, [ALT5_ABBREV])],
+    )
+    graph_b = _graph_alt_nodes(
+        name="B",
+        records=[("b1", 10, 20, [ALT5_ABBREV]), ("b2", 40, 50, [ALT5_ABBREV])],
+    )
+
+    a_minus_b, b_minus_a = diffAS(graph_a, graph_b)
+
+    assert _alt_signature(a_minus_b) == {(10, 20, ALT3_ABBREV)}
+    assert _alt_signature(b_minus_a) == {(10, 20, ALT5_ABBREV)}
+
+
+def test_common_as_excludes_partial_coordinate_overlaps() -> None:
+    graph_a = _graph_alt_nodes(name="A", records=[("a1", 10, 20, [ALT3_ABBREV])])
+    graph_b = _graph_alt_nodes(name="B", records=[("b1", 12, 22, [ALT3_ABBREV])])
+
+    common = commonAS(graph_a, graph_b)
+
+    assert common.resolvedNodes() == []
+
+
+def test_alt_site_event_list_uses_overlap_candidates_not_full_scan(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    graph = SpliceGraph("g", "chr1", "+")
+    event_nodes = []
+    for i in range(120):
+        start = 10 + (i * 20)
+        node = graph.addNode(f"n{i}", start, start + 5)
+        node.addAltForm(ALT5_ABBREV)
+        child = graph.addNode(f"c{i}", 5000 + (i * 20), 5005 + (i * 20))
+        node.addChild(child)
+        event_nodes.append(node)
+
+    overlap_calls = 0
+    original_overlap = splice_graph_module.overlap
+
+    def counting_overlap(left: SpliceGraphNode, right: SpliceGraphNode) -> bool:
+        nonlocal overlap_calls
+        overlap_calls += 1
+        return original_overlap(left, right)
+
+    monkeypatch.setattr(splice_graph_module, "overlap", counting_overlap)
+
+    events = altSiteEventList(graph.resolvedNodes(), ALT5_ABBREV)
+
+    assert len(events) == len(event_nodes)
+    assert overlap_calls < 1000

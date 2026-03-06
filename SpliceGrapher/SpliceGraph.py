@@ -16,7 +16,11 @@ from SpliceGrapher.core.enums import (
     RecordType,
     Strand,
 )
-from SpliceGrapher.core.interval_helpers import interval_contains, intervals_overlap
+from SpliceGrapher.core.interval_helpers import (
+    InMemoryIntervalIndex,
+    interval_contains,
+    intervals_overlap,
+)
 from SpliceGrapher.shared.collection_utils import as_list
 from SpliceGrapher.shared.file_utils import ez_open
 from SpliceGrapher.shared.format_utils import list_string
@@ -214,6 +218,7 @@ def altSiteEventList(nodes, siteType, verbose=False):
     # not be stored in distinct sets to be merged later
     eventNodes.sort(key=lambda node: (node.minpos, node.maxpos, node.id))
     eventList = []
+    overlap_index = InMemoryIntervalIndex(eventNodes)
     stored = set()
     for n in eventNodes:
         eset = set([n])
@@ -223,7 +228,7 @@ def altSiteEventList(nodes, siteType, verbose=False):
             sys.stderr.write("  Node %s has %s %s\n" % (n.id, modifier, setString(adj_n)))
 
         # Find other nodes with the same annotation that overlap the current one
-        for m in eventNodes:
+        for m in overlap_index.overlaps(n, inclusive=False):
             if m == n or not overlap(m, n):
                 continue
             if verbose:
@@ -1355,7 +1360,7 @@ class SpliceGraph(object):
         try:
             # Look for a node with the same start/end positions
             tmpNode = NullNode(start, end)
-            allNodes = self.nodeDict.values()
+            allNodes = list(self.nodeDict.values())
             idx = allNodes.index(tmpNode)
             return allNodes[idx]
         except ValueError:
