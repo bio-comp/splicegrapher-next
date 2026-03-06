@@ -6,6 +6,11 @@ from collections.abc import Callable, Collection, Iterator
 from contextlib import contextmanager
 from typing import TYPE_CHECKING, TextIO
 
+from SpliceGrapher.formats.serializers import (
+    gff_line_for_chromosome,
+    gff_text_for_gene,
+    gtf_text_for_gene,
+)
 from SpliceGrapher.shared.progress import ProgressIndicator
 
 if TYPE_CHECKING:
@@ -47,14 +52,14 @@ def write_gff(
             chrom = model.get_chromosome(chrom_name)
             if chrom is None:
                 continue
-            out_stream.write(f"{chrom.gff_string()}\n")
+            out_stream.write(f"{gff_line_for_chromosome(chrom)}\n")
             genes = model.get_gene_records(chrom_name, gene_filter)
             if gene_set:
                 genes = [g for g in genes if g.id in gene_set or g.name in gene_set]
             genes.sort(key=_gene_sort_key)
             for gene in genes:
                 indicator.update()
-                strings = gene.gff_strings()
+                strings = gff_text_for_gene(gene)
                 if strings:
                     out_stream.write(f"{strings}\n")
         indicator.finish()
@@ -76,7 +81,7 @@ def write_gtf(
             genes.sort(key=_gene_sort_key)
             for gene in genes:
                 indicator.update()
-                strings = gene.gtf_strings()
+                strings = gtf_text_for_gene(gene)
                 if strings:
                     out_stream.write(f"{strings}\n")
         indicator.finish()

@@ -8,7 +8,7 @@ from SpliceGrapher.formats.parsers import gene_model_gff as parser_boundary
 
 def test_candidate_cache_uses_bounded_clear_policy() -> None:
     ctx = parser_boundary.ParseContext(
-        model=gm.GeneModel(None),
+        model=gm.GeneModel(),
         require_notes=False,
         verbose=False,
         ignore_errors=False,
@@ -24,7 +24,7 @@ def test_candidate_cache_uses_bounded_clear_policy() -> None:
 
 
 def test_parent_cache_uses_bounded_clear_policy() -> None:
-    model = gm.GeneModel(None)
+    model = gm.GeneModel()
     model.add_chromosome(1, 100, "chr1")
     gene_one = gm.Gene("GENE1", None, 1, 10, "chr1", "+")
     gene_two = gm.Gene("GENE2", None, 20, 30, "chr1", "+")

@@ -24,7 +24,7 @@ PARENT_CANDIDATE_MAX_ENTRIES = 200_000
 
 class GeneModelLike(Protocol):
     model: dict[str, dict[str, model_domain.Gene]]
-    mrna_forms: dict[str, dict[str, model_domain.Mrna]]
+    mrna_forms: dict[str, dict[str, model_domain.Transcript]]
     mrna_gene: dict[str, dict[str, model_domain.Gene]]
     all_genes: dict[str, model_domain.Gene]
     found_types: dict[RecordType, bool]
@@ -41,7 +41,7 @@ class GeneModelLike(Protocol):
         chrom: str,
         search_genes: bool = True,
         search_mrna: bool = True,
-    ) -> model_domain.Gene | model_domain.Mrna | None: ...
+    ) -> model_domain.Gene | model_domain.Transcript | None: ...
 
     def get_mrna_parent(
         self,
@@ -86,10 +86,13 @@ class ParseContext:
     parent_candidate_max_entries: int = PARENT_CANDIDATE_MAX_ENTRIES
     stats: ParseStats = field(default_factory=ParseStats)
     gene_alias: dict[str, str] = field(default_factory=dict)
-    parent_cache: dict[tuple[str, str, bool, bool], model_domain.Gene | model_domain.Mrna] = field(
-        default_factory=dict
-    )
+    parent_cache: dict[
+        tuple[str, str, bool, bool],
+        model_domain.Gene | model_domain.Transcript,
+    ] = field(default_factory=dict)
     parent_candidates: dict[str, tuple[str, ...]] = field(default_factory=dict)
+    pending_exons: dict[tuple[str, str], list[ParsedRecord]] = field(default_factory=dict)
+    pending_regions: dict[tuple[str, str], list[ParsedRecord]] = field(default_factory=dict)
 
     def fail(self, message: str) -> None:
         if self.ignore_errors:
@@ -122,7 +125,7 @@ class ParseContext:
     def cache_parent(
         self,
         cache_key: tuple[str, str, bool, bool],
-        parent_record: model_domain.Gene | model_domain.Mrna,
+        parent_record: model_domain.Gene | model_domain.Transcript,
     ) -> None:
         if (
             self.parent_cache_max_entries > 0
@@ -192,6 +195,69 @@ def _parse_annotations(annotation_string: str) -> dict[str, str]:
     return result
 
 
+def _pending_key(chrom: str, transcript_id: str) -> tuple[str, str]:
+    return (chrom, transcript_id.upper())
+
+
+def _queue_pending_child(
+    pending_map: dict[tuple[str, str], list[ParsedRecord]],
+    record: ParsedRecord,
+    parent_id: str,
+) -> None:
+    pending_map.setdefault(_pending_key(record.chrom, parent_id), []).append(record)
+
+
+def _drain_pending_children(
+    ctx: ParseContext,
+    *,
+    transcript: model_domain.Transcript,
+    parent_gene: model_domain.Gene,
+    chrom: str,
+) -> None:
+    key = _pending_key(chrom, transcript.id)
+
+    for pending in ctx.pending_exons.pop(key, []):
+        strand = _resolve_strand(
+            ctx,
+            observed=pending.strand,
+            expected=transcript.strand,
+            mismatch_message=(
+                f"line {pending.line_no}: exon strand ({pending.strand}) != transcript "
+                f"strand ({transcript.strand}) for {transcript.id}"
+            ),
+        )
+        exon = model_domain.Exon(
+            pending.start_pos,
+            pending.end_pos,
+            pending.chrom,
+            strand,
+            pending.annots,
+        )
+        if parent_gene.add_exon(transcript, exon):
+            ctx.stats.exon_count += 1
+
+    for pending in ctx.pending_regions.pop(key, []):
+        strand = _resolve_strand(
+            ctx,
+            observed=pending.strand,
+            expected=transcript.strand,
+            mismatch_message=(
+                f"line {pending.line_no}: {pending.rec_type} strand ({pending.strand}) != "
+                f"transcript strand ({transcript.strand}) for {transcript.id}"
+            ),
+        )
+        cds = model_domain.cds_factory(
+            pending.rec_type,
+            pending.start_pos,
+            pending.end_pos,
+            pending.chrom,
+            strand,
+            pending.annots,
+        )
+        if parent_gene.add_cds(transcript, cds):
+            ctx.stats.cds_count += 1
+
+
 def _candidate_parent_ids(ctx: ParseContext, parent_string: str) -> tuple[str, ...]:
     cached = ctx.parent_candidates.get(parent_string)
     if cached is not None:
@@ -249,7 +315,8 @@ def _resolve_parent(
     *,
     search_genes: bool = True,
     search_mrna: bool = True,
-) -> model_domain.Gene | model_domain.Mrna | None:
+) -> model_domain.Gene | model_domain.Transcript | None:
+    # Transcript parents and gene parents share the same parent-resolution path.
     parent_string = parent_id.upper()
     chrom_key = chrom.lower()
     cache_key = (chrom_key, parent_string, search_genes, search_mrna)
@@ -399,12 +466,13 @@ def _handle_gene_record(ctx: ParseContext, record: ParsedRecord) -> None:
 
     ctx.model.all_chr[record.chrom].update(gene_obj)
     ctx.model.add_gene(gene_obj)
-    ctx.gene_alias[gene_obj.name.upper()] = gene_obj.id.upper()
+    alias_key = (gene_obj.name or gene_obj.id).upper()
+    ctx.gene_alias[alias_key] = gene_obj.id.upper()
     ctx.stats.gene_count += 1
 
 
 def _resolve_exon_parent(ctx: ParseContext, record: ParsedRecord) -> model_domain.Gene | None:
-    parent_record: model_domain.Gene | model_domain.Mrna | None = None
+    parent_record: model_domain.Gene | model_domain.Transcript | None = None
     tried: set[str] = set()
     for key in model_domain.POSSIBLE_GENE_FIELDS:
         parent_name = _annotation_value(record.annots, key)
@@ -417,10 +485,8 @@ def _resolve_exon_parent(ctx: ParseContext, record: ParsedRecord) -> model_domai
 
     if parent_record is None:
         return None
-    if isinstance(parent_record, model_domain.Mrna):
+    if isinstance(parent_record, model_domain.Transcript):
         parent_gene = ctx.model.get_mrna_parent(record.chrom, parent_record.id)
-        if parent_gene is None and isinstance(parent_record.parent, model_domain.Gene):
-            parent_gene = parent_record.parent
         if parent_gene is None:
             ctx.fail(f"line {record.line_no}: Mrna parent is missing gene for exon record")
             return None
@@ -435,7 +501,7 @@ def _resolve_isoform(
     ctx: ParseContext,
     record: ParsedRecord,
     gene_obj: model_domain.Gene,
-) -> tuple[model_domain.Isoform | None, bool]:
+) -> tuple[model_domain.Transcript | None, bool]:
     isoform = None
     iso_name = ""
     tried: set[str] = set()
@@ -444,8 +510,22 @@ def _resolve_isoform(
         if name is None or name in tried:
             continue
         iso_name = name
-        if iso_name in gene_obj.isoforms:
-            isoform = gene_obj.isoforms[iso_name]
+        if iso_name in gene_obj.transcripts:
+            existing = gene_obj.transcripts[iso_name]
+            if isinstance(existing, model_domain.Transcript):
+                isoform = existing
+            else:
+                isoform = model_domain.Transcript(
+                    iso_name,
+                    existing.minpos,
+                    existing.maxpos,
+                    existing.chromosome,
+                    existing.strand,
+                    attr=existing.attributes,
+                )
+                for exon in existing.exons:
+                    isoform.add_exon(exon)
+                gene_obj.add_transcript(isoform)
             break
         tried.add(iso_name)
 
@@ -469,7 +549,7 @@ def _resolve_isoform(
         str(model_domain.ID_FIELD): iso_name,
     }
     return (
-        model_domain.Isoform(
+        model_domain.Transcript(
             iso_name,
             record.start_pos,
             record.end_pos,
@@ -485,8 +565,40 @@ def _handle_exon_record(ctx: ParseContext, record: ParsedRecord) -> None:
     if not _has_chromosome(ctx, record, ctx.model.model):
         return
 
+    parent_id = _parent_annotation(record)
+    if parent_id is None:
+        return
+    existing_transcript = _resolve_parent(ctx, parent_id, record.chrom, search_genes=False)
+    if isinstance(existing_transcript, model_domain.Transcript):
+        parent_gene = ctx.model.get_mrna_parent(record.chrom, existing_transcript.id)
+        if parent_gene is None:
+            ctx.fail(
+                f"line {record.line_no}: transcript {existing_transcript.id} is missing parent gene"
+            )
+            return
+        strand = _resolve_strand(
+            ctx,
+            observed=record.strand,
+            expected=existing_transcript.strand,
+            mismatch_message=(
+                f"line {record.line_no}: exon strand ({record.strand}) != transcript "
+                f"strand ({existing_transcript.strand}) for {existing_transcript.id}"
+            ),
+        )
+        exon = model_domain.Exon(
+            record.start_pos,
+            record.end_pos,
+            record.chrom,
+            strand,
+            record.annots,
+        )
+        if parent_gene.add_exon(existing_transcript, exon):
+            ctx.stats.exon_count += 1
+        return
+
     gene_obj = _resolve_exon_parent(ctx, record)
     if gene_obj is None:
+        _queue_pending_child(ctx.pending_exons, record, parent_id)
         return
 
     isoform, created_isoform = _resolve_isoform(ctx, record, gene_obj)
@@ -513,6 +625,16 @@ def _handle_exon_record(ctx: ParseContext, record: ParsedRecord) -> None:
         ctx.stats.exon_count += 1
     if created_isoform:
         ctx.stats.iso_count += 1
+    transcript = gene_obj.transcripts.get(isoform.id)
+    if isinstance(transcript, model_domain.Transcript):
+        ctx.model.mrna_forms.setdefault(record.chrom, {})[transcript.id] = transcript
+        ctx.model.mrna_gene.setdefault(record.chrom, {})[transcript.id] = gene_obj
+        _drain_pending_children(
+            ctx,
+            transcript=transcript,
+            parent_gene=gene_obj,
+            chrom=record.chrom,
+        )
 
 
 def _resolve_mrna_gene(
@@ -586,7 +708,7 @@ def _handle_mrna_record(ctx: ParseContext, record: ParsedRecord) -> None:
         str(model_domain.NAME_FIELD): transcript_id,
         str(model_domain.ID_FIELD): transcript_id,
     }
-    mrna = model_domain.Mrna(
+    mrna = model_domain.Transcript(
         transcript_id,
         record.start_pos,
         record.end_pos,
@@ -594,9 +716,15 @@ def _handle_mrna_record(ctx: ParseContext, record: ParsedRecord) -> None:
         strand,
         attr=mrna_attr,
     )
-    mrna_gene.add_mrna(mrna)
+    mrna_gene.add_transcript(mrna)
     ctx.model.mrna_forms.setdefault(record.chrom, {})[transcript_id] = mrna
     ctx.model.mrna_gene.setdefault(record.chrom, {})[transcript_id] = mrna_gene
+    _drain_pending_children(
+        ctx,
+        transcript=mrna,
+        parent_gene=mrna_gene,
+        chrom=record.chrom,
+    )
     ctx.stats.mrna_count += 1
 
 
@@ -611,16 +739,6 @@ def _handle_transcript_region_record(ctx: ParseContext, record: ParsedRecord) ->
         ),
     ):
         return
-    if not _has_chromosome(
-        ctx,
-        record,
-        ctx.model.mrna_forms,
-        fail_message=(
-            f"line {record.line_no}: {record.rec_type} has unrecognized chromosome: "
-            f"{record.chrom} (known: {_known_chromosomes(ctx.model.mrna_forms)})"
-        ),
-    ):
-        return
 
     parent_id = _parent_annotation(record)
     if parent_id is None:
@@ -628,13 +746,12 @@ def _handle_transcript_region_record(ctx: ParseContext, record: ParsedRecord) ->
     mrna_record = _resolve_parent(ctx, parent_id, record.chrom, search_genes=False)
     if mrna_record is None:
         ctx.write_verbose(f"line {record.line_no}: no Mrna {parent_id} found for {record.rec_type}")
+        _queue_pending_child(ctx.pending_regions, record, parent_id)
         return
-    if not isinstance(mrna_record, model_domain.Mrna):
+    if not isinstance(mrna_record, model_domain.Transcript):
         ctx.fail(f"line {record.line_no}: parent {parent_id} is not an Mrna record")
         return
     parent_gene = ctx.model.get_mrna_parent(record.chrom, mrna_record.id)
-    if parent_gene is None and isinstance(mrna_record.parent, model_domain.Gene):
-        parent_gene = mrna_record.parent
     if parent_gene is None:
         ctx.fail(
             f"line {record.line_no}: Mrna {mrna_record.id} is missing a parent gene for CDS record"
