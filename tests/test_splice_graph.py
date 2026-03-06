@@ -5,9 +5,14 @@ from pathlib import Path
 import pytest
 
 import SpliceGrapher.SpliceGraph as splice_graph_module
+from SpliceGrapher.core.enums import (
+    AlternativeSplicingEvent,
+    AlternativeSplicingEventName,
+)
 from SpliceGrapher.SpliceGraph import (
     ALT3_ABBREV,
     ALT5_ABBREV,
+    AS_KEY,
     GENE_REC,
     SpliceGraph,
     SpliceGraphNode,
@@ -261,3 +266,43 @@ def test_alt_site_event_list_uses_overlap_candidates_not_full_scan(
 
     assert len(events) == len(event_nodes)
     assert overlap_calls < 1000
+
+
+def test_alt_form_set_normalizes_event_name_to_event_code() -> None:
+    node = SpliceGraphNode("n1", 10, 20, "+", "chr1")
+
+    node.addAltForm(AlternativeSplicingEventName.ALT3.value)
+
+    assert set(node.altForms()) == {AlternativeSplicingEvent.ALT3.value}
+    assert node.attrs[AS_KEY] == AlternativeSplicingEvent.ALT3.value
+    assert node.hasAS() is True
+
+
+def test_alt_form_set_accepts_enum_members_and_preserves_public_strings() -> None:
+    node = SpliceGraphNode("n1", 10, 20, "+", "chr1")
+
+    node.addAltForm(AlternativeSplicingEvent.ALT5)
+    node.addAltForm(AlternativeSplicingEvent.ALT3)
+
+    assert set(node.altForms()) == {
+        AlternativeSplicingEvent.ALT5.value,
+        AlternativeSplicingEvent.ALT3.value,
+    }
+    assert node.isAltDonor() is True
+    assert node.isAltAcceptor() is True
+
+
+def test_as_domain_constants_are_derived_from_core_event_enums() -> None:
+    expected_codes = [event.value for event in AlternativeSplicingEvent]
+    expected_names = [event_name.value for event_name in AlternativeSplicingEventName]
+
+    assert splice_graph_module.AS_ABBREVS == expected_codes
+    assert splice_graph_module.AS_NAMES == expected_names
+    assert (
+        splice_graph_module.EVENT_NAME[AlternativeSplicingEvent.ALT3.value]
+        == AlternativeSplicingEventName.ALT3.value
+    )
+    assert (
+        splice_graph_module.EVENT_ABBREV[AlternativeSplicingEventName.ALT3.value]
+        == AlternativeSplicingEvent.ALT3.value
+    )

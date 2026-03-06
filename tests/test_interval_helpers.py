@@ -34,15 +34,15 @@ def test_interval_contains_supports_strict_and_non_strict_modes() -> None:
     assert interval_contains(container, boundary_child, strict=False)
 
 
-def test_in_memory_interval_index_returns_containing_or_predecessor() -> None:
-    intervals = [_Interval(1, 10), _Interval(20, 30), _Interval(40, 50)]
+def test_in_memory_interval_index_defensively_sorts_unsorted_inputs() -> None:
+    intervals = [_Interval(40, 50), _Interval(1, 10), _Interval(20, 30)]
     index = InMemoryIntervalIndex(intervals)
 
-    contained = index.predecessor_or_containing(_Interval(21, 22))
-    predecessor = index.predecessor_or_containing(_Interval(32, 33))
+    sorted_bounds = [(interval.minpos, interval.maxpos) for interval in index]
+    overlaps = index.overlaps(_Interval(5, 25))
 
-    assert contained == intervals[1]
-    assert predecessor == intervals[1]
+    assert sorted_bounds == [(1, 10), (20, 30), (40, 50)]
+    assert [(interval.minpos, interval.maxpos) for interval in overlaps] == [(1, 10), (20, 30)]
 
 
 def test_batch_overlaps_uses_shared_interval_index() -> None:

@@ -48,11 +48,12 @@ def interval_contains(
 class InMemoryIntervalIndex(Sequence[_IntervalT]):
     """Bisect-backed in-memory interval index over a sorted interval list."""
 
-    def __init__(self, intervals: Sequence[_IntervalT]):
-        if not intervals:
+    def __init__(self, intervals: Iterable[_IntervalT]):
+        interval_list = list(intervals)
+        if not interval_list:
             raise ValueError("Cannot index an empty interval list")
 
-        self._intervals = tuple(intervals)
+        self._intervals = tuple(sorted(interval_list, key=lambda interval: interval.minpos))
         self._starts = tuple(interval.minpos for interval in self._intervals)
         prefix_maxes: list[int] = []
         running_max = self._intervals[0].maxpos
@@ -73,38 +74,6 @@ class InMemoryIntervalIndex(Sequence[_IntervalT]):
     def __len__(self) -> int:
         return len(self._intervals)
 
-    def predecessor_or_containing(
-        self,
-        query: IntervalBounds,
-        *,
-        lo: int = 0,
-        hi: int | None = None,
-        overlap_window: int = 8,
-    ) -> _IntervalT:
-        """Return an interval that contains ``query`` or its immediate predecessor."""
-        if hi is None:
-            hi = len(self._intervals) - 1
-
-        lo = max(0, lo)
-        hi = min(hi, len(self._intervals) - 1)
-        if lo > hi:
-            raise ValueError("Invalid search bounds")
-
-        idx = bisect.bisect_left(self._starts, query.minpos, lo=lo, hi=hi + 1)
-
-        left = max(lo, idx - overlap_window)
-        right = min(hi, idx + overlap_window)
-        for i in range(left, right + 1):
-            if interval_contains(self._intervals[i], query):
-                return self._intervals[i]
-
-        pred_idx = idx - 1
-        if pred_idx < lo:
-            return self._intervals[lo]
-        if pred_idx > hi:
-            return self._intervals[hi]
-        return self._intervals[pred_idx]
-
     def overlaps(
         self,
         query: IntervalBounds,
@@ -112,10 +81,7 @@ class InMemoryIntervalIndex(Sequence[_IntervalT]):
         inclusive: bool = True,
     ) -> list[_IntervalT]:
         """Return all indexed intervals that overlap ``query``."""
-        idx = bisect.bisect_left(self._starts, query.minpos)
-        scan_start = idx
-        while scan_start > 0 and self._prefix_maxes[scan_start - 1] >= query.minpos:
-            scan_start -= 1
+        scan_start = bisect.bisect_left(self._prefix_maxes, query.minpos)
         result: list[_IntervalT] = []
         for interval in self._intervals[scan_start:]:
             if interval.minpos > query.maxpos:
