@@ -50,6 +50,7 @@ class GeneBounds(Protocol):
     maxpos: int
 
 
+# Legacy public helper surface preserved for ABI stability.
 def isBamFile(filePath: str | PathLike[str]) -> bool:
     """Simple heuristic returns True if path is a BAM file; false otherwise."""
     return str(filePath).lower().endswith(".bam")
@@ -70,6 +71,7 @@ def makeChromosomeSet(chromList: ChromosomeInput) -> set[str] | None:
     return chrom_set
 
 
+# Source normalization and alignment opening helpers.
 def _is_alignment_path(source: AlignmentSource) -> bool:
     """Return ``True`` when ``source`` is a filesystem path to an alignment file."""
     return isinstance(source, (str, PathLike)) and os.path.isfile(os.fspath(source))
@@ -201,28 +203,7 @@ def _open_alignment_file(
     return pysam.AlignmentFile(path_string, "r")
 
 
-def _is_depths_source(source: ReadDataSource) -> bool:
-    """Return ``True`` when ``source`` should be handled as a depths file."""
-    if not isinstance(source, (str, PathLike)):
-        return False
-
-    source_path = os.fspath(source)
-    lower = source_path.lower()
-    if lower.endswith((".sam", ".bam", ".cram")):
-        return False
-
-    if os.path.isfile(source_path):
-        try:
-            with open(source_path, "rb") as stream:
-                magic = stream.read(4)
-        except OSError:
-            magic = b""
-        if magic in {b"BAM\x01", b"CRAM"}:
-            return False
-
-    return is_depths_file(source_path)
-
-
+# Pysam-backed collection helpers.
 class AlignmentStreamer:
     """Unified alignment streamer for SAM/BAM/CRAM and in-memory SAM sources."""
 
@@ -354,6 +335,29 @@ def _depth_map_to_arrays(
         chrom: numpy.asarray(chrom_depths, dtype=numpy.int32)
         for chrom, chrom_depths in depths.items()
     }
+
+
+# Depths-file fallback bridge for legacy public wrappers.
+def _is_depths_source(source: ReadDataSource) -> bool:
+    """Return ``True`` when ``source`` should be handled as a depths file."""
+    if not isinstance(source, (str, PathLike)):
+        return False
+
+    source_path = os.fspath(source)
+    lower = source_path.lower()
+    if lower.endswith((".sam", ".bam", ".cram")):
+        return False
+
+    if os.path.isfile(source_path):
+        try:
+            with open(source_path, "rb") as stream:
+                magic = stream.read(4)
+        except OSError:
+            magic = b""
+        if magic in {b"BAM\x01", b"CRAM"}:
+            return False
+
+    return is_depths_file(source_path)
 
 
 @overload
@@ -564,6 +568,7 @@ def _collect_pysam_data(
     return normalized_depths, normalized_junctions
 
 
+# Legacy public API wrappers.
 def pysamStrand(
     pysamRecord: pysam.AlignedSegment,
     tagDict: dict[str, str] | None = None,
