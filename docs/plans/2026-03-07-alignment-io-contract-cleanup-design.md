@@ -1,48 +1,30 @@
-# alignment_io.py Cleanup Tranche D Design
+# alignment_io.py Hard-Break Rewrite Design
 
 ## Goal
 
-Harden `SpliceGrapher/formats/alignment_io.py` API clarity and tuple-shape guarantees without breaking the current public ABI.
+Replace the legacy camelCase `alignment_io.py` public API with a snake_case-only alignment I/O surface, then repair the SGN call sites and tests against that new boundary.
 
 ## Scope
 
-This tranche stays strictly inside `#165`:
-- keep public camelCase entrypoints intact
-- keep tuple return types intact
-- document and test the `alignments=True` contract
-- fix depths-file fallback so it preserves the requested tuple shape
-- tighten touched typing where it improves local clarity without creating cross-module coupling
-- reorganize internal helpers into clearer concern blocks within the same file
+This tranche deliberately breaks the old API.
+
+In scope:
+- delete camelCase public entrypoints from `SpliceGrapher/formats/alignment_io.py`
+- replace them with explicit snake_case functions
+- keep the corrected tuple-shape contract in the new `collect_alignment_data(...)` API
+- update SGN call sites and tests to the new names
+- tighten touched typing and keep the module internally compartmentalized by concern
 
 Out of scope:
-- moving benchmark code
+- compatibility aliases in `alignment_io.py`
+- benchmark relocation
 - `SpliceGraph.py` lowercase/shim migration
-- introducing snake_case public aliases
-- breaking tuple returns into dataclasses or named tuples
-- broad extraction or package-layout moves
+- downstream iDiffIR/TAPIS repair
+- broad parser/package extraction outside the touched alignment surface
 
-## Current State
+## Replacement API
 
-`alignment_io.py` already has a useful internal split:
-- source normalization and in-memory SAM wrapping
-- pysam-backed alignment opening
-- junction/depth/alignment collection
-- legacy public wrappers
-
-The primary contract hazard is in `getSamReadData(...)`.
-
-When `alignments=True`, callers reasonably expect a 3-tuple:
-- depths map
-- junction map
-- alignment map
-
-The pysam-backed path satisfies that contract. The depths-file fallback does not; it currently returns only a 2-tuple. That is an ABI footgun because downstream callers can legally unpack three values and fail at runtime only on one branch.
-
-## Chosen Approach
-
-### 1. Preserve public ABI exactly
-
-The module will keep its public camelCase names:
+Delete:
 - `getSamReadData`
 - `getSamDepths`
 - `getSamJunctions`
@@ -56,55 +38,68 @@ The module will keep its public camelCase names:
 - `isCramFile`
 - `makeChromosomeSet`
 
-No new public aliases land in this tranche.
+Replace with:
+- `collect_alignment_data`
+- `read_alignment_depths`
+- `read_alignment_junctions`
+- `read_alignment_spans`
+- `read_alignment_headers`
+- `read_alignment_chromosome_info`
+- `read_alignment_sequences`
+- `calculate_gene_depths`
 
-### 2. Make tuple-shape behavior explicit and test-backed
+Private helpers will be snake_case and private by default, for example:
+- `_is_bam`
+- `_is_cram`
+- `_make_chromosome_set`
+- `_record_strand`
 
-Add coverage for:
-- `getSamReadData(..., alignments=True)` on the pysam path
-- `getSamReadData(..., alignments=True)` on the depths-file fallback path
+## Contract Decisions
 
-The fallback will return `(depths, junctions, {})` when `alignments=True` so both branches satisfy the same structural contract.
+### 1. No compatibility wrappers
 
-### 3. Tighten typing without coupling to the domain model
+This branch does not preserve the old names. The repo should fail loudly anywhere that still imports or calls them. Those failures are the migration map.
 
-`pysamReadDepths` should not accept an untyped `gene` parameter. Instead, define a minimal structural protocol describing the attributes it actually uses:
-- `id`
-- `strand`
-- `minpos`
-- `maxpos`
+### 2. Keep the modern tuple contract
 
-This keeps the I/O layer decoupled from `Gene` or `GeneModel` imports.
+`collect_alignment_data(..., include_alignments=True)` returns a 3-tuple on both branches:
+- depths map
+- junction map
+- alignment map
 
-For source handling, prefer more specific type aliases over raw `object` where practical, but do not force a large rewrite of every helper signature if it makes the file noisier than it makes it safer.
+Depths-file fallback returns an empty alignment map instead of collapsing to a 2-tuple.
 
-### 4. Reorganize internal code by concern
+### 3. Keep the module split by concern
 
-Within the same file, arrange helpers into four blocks:
-1. source/path normalization
-2. pysam opening and collection
-3. depths-file fallback bridge
-4. public legacy API wrappers
+The file remains internally grouped into:
+1. type aliases/protocols/constants
+2. source normalization and opening helpers
+3. pysam-backed collection helpers
+4. depths-file fallback bridge
+5. public snake_case API
 
-This is an internal compartmentalization cut, not a file split.
+This keeps the rewrite reviewable and prepares future file splits without combining that work into `#165`.
 
 ## Testing Strategy
 
-Regression coverage should prove:
-- BAM/SAM path still returns a 3-tuple when `alignments=True`
-- alignment map is populated on the pysam path
-- depths-file fallback returns a 3-tuple with an empty alignment map when `alignments=True`
-- existing 2-tuple behavior remains unchanged when `alignments=False`
+1. Rewrite alignment I/O tests to the new snake_case API first.
+2. Run the focused alignment slice and observe the import/call failures.
+3. Rename the public functions in `alignment_io.py` and delete the camelCase wrappers.
+4. Sweep SGN tests/callers to the new API.
+5. Verify the touched alignment surface with Ruff, MyPy, and targeted pytest.
 
-Verification remains the usual touched-file gates:
-- Ruff check
-- Ruff format check
-- MyPy on touched modules/tests
-- targeted pytest for alignment I/O coverage
+## Expected Blast Radius
+
+The initial failures should come from:
+- `tests/test_alignment_io_parity.py`
+- `tests/test_alignment_io_process_utils_boundary.py`
+- `tests/test_splicegrapher_alignment_io.py`
+- any SGN callers/imports of `getSamReadData`, `getSamDepths`, `getSamJunctions`, `getSamAlignments`, or header helpers
+
+That blast radius is intentional.
 
 ## Follow-up Work (Not This Tranche)
 
 1. Move `polars_gff_benchmark.py` out of the runtime package.
-2. Introduce a lowercase `splice_graph.py` module with `SpliceGraph.py` as a compatibility shim.
-3. Consider future snake_case aliasing or public API cleanup for `alignment_io.py` once downstream callers are ready.
-4. Split `alignment_io.py` into smaller modules after the ABI contract is fully pinned by tests.
+2. Migrate `SpliceGraph.py` to a lowercase compatibility shim model.
+3. Split `alignment_io.py` into smaller modules after the new API has settled.
