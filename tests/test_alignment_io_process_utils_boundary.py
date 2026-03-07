@@ -52,3 +52,27 @@ def test_get_sam_read_data_rejects_unknown_keyword_argument(tmp_path: Path) -> N
     fixture = build_alignment_fixture(tmp_path, repeat_scale=8)
     with pytest.raises(TypeError):
         getSamReadData(str(fixture.bam), nonsense_option=True)
+
+
+def test_get_sam_read_data_depths_fallback_preserves_three_tuple_when_alignments_requested(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    sample_path = tmp_path / "sample.depths"
+    sample_path.write_text("placeholder\n", encoding="utf-8")
+
+    fake_depths = {"chr1": [0, 1, 2]}
+    fake_junctions = {"chr1": []}
+
+    monkeypatch.setattr(alignment_io, "_is_depths_source", lambda source: True)
+    monkeypatch.setattr(
+        alignment_io,
+        "read_depths",
+        lambda *args, **kwargs: (fake_depths, fake_junctions),
+    )
+
+    depths, junctions, alignments = getSamReadData(str(sample_path), alignments=True)
+
+    assert list(depths["chr1"]) == [0, 1, 2]
+    assert junctions == fake_junctions
+    assert alignments == {}

@@ -3,6 +3,7 @@ from pathlib import Path
 import numpy
 
 from SpliceGrapher.formats.alignment_io import (
+    getSamAlignments,
     getSamDepths,
     getSamHeaders,
     getSamJunctions,
@@ -78,6 +79,26 @@ def test_get_sam_depths_and_junctions_respect_chromosome_filter(tmp_path: Path):
     assert set(depths.keys()) == {fixture.chrom}
     assert set(junctions.keys()) == {fixture.chrom}
     assert junctions[fixture.chrom]
+
+
+def test_get_sam_read_data_alignments_true_returns_alignment_map(tmp_path: Path) -> None:
+    fixture = build_alignment_fixture(tmp_path, repeat_scale=8)
+
+    depths, junctions, alignments = getSamReadData(str(fixture.bam), alignments=True)
+
+    assert fixture.chrom in depths
+    assert fixture.chrom in junctions
+    assert fixture.chrom in alignments
+    assert alignments[fixture.chrom]
+
+
+def test_get_sam_alignments_matches_read_data_alignment_map(tmp_path: Path) -> None:
+    fixture = build_alignment_fixture(tmp_path, repeat_scale=8)
+
+    _, _, alignments = getSamReadData(str(fixture.bam), alignments=True)
+    direct_alignments = getSamAlignments(str(fixture.bam))
+
+    assert direct_alignments == alignments
 
 
 def test_get_sam_headers_reads_bam_and_sam_headers(tmp_path: Path):
