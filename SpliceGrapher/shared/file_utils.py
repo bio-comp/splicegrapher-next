@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import gzip
+from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
 from typing import TextIO
 
@@ -31,6 +33,16 @@ def ez_open(file_name: str | Path) -> TextIO:
         return gzip.open(path, mode="rt")
 
     return path.open("r")
+
+
+@contextmanager
+def open_output(path: str | Path | TextIO) -> Iterator[TextIO]:
+    """Yield a writable text stream for a path or existing stream."""
+    if isinstance(path, (str, Path)):
+        with _as_path(path).open("w") as stream:
+            yield stream
+        return
+    yield path
 
 
 def file_len(path: str | Path) -> int:
@@ -103,6 +115,7 @@ __all__ = [
     "file_prefix",
     "find_file",
     "make_graph_list_file",
+    "open_output",
     "validate_dir",
     "validate_file",
 ]

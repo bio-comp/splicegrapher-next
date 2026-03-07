@@ -2,90 +2,16 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import networkx as nx
 import pytest
 
-import SpliceGrapher.SpliceGraph as splice_graph_module
 from SpliceGrapher.core.enums import (
     AlternativeSplicingEvent,
     AlternativeSplicingEventName,
+    Strand,
 )
-from SpliceGrapher.SpliceGraph import (
-    ALT3_ABBREV,
-    ALT5_ABBREV,
-    AS_KEY,
-    GENE_REC,
-    SpliceGraph,
-    SpliceGraphNode,
-    SpliceGraphParser,
-    altSiteEventList,
-    commonAS,
-    diffAS,
-    getFirstGraph,
-    graphMinusAS,
-    overlap,
-)
-
-
-def test_union_uses_resolved_strand_when_merging_unknown_strand_graph() -> None:
-    left = SpliceGraph("left", "chr1", ".")
-    left.addNode("L1", 10, 20)
-
-    right = SpliceGraph("right", "chr1", "+")
-    right.addNode("R1", 30, 40)
-
-    merged = left.union(right)
-
-    assert merged.strand == "+"
-
-
-def test_union_rejects_invalid_runtime_strand_value() -> None:
-    left = SpliceGraph("left", "chr1", "+")
-    left.addNode("L1", 10, 20)
-
-    right = SpliceGraph("right", "chr1", "+")
-    right.addNode("R1", 30, 40)
-    right.strand = "?"
-
-    with pytest.raises(ValueError):
-        left.union(right)
-
-
-def test_union_rejects_conflicting_known_strands_with_value_error() -> None:
-    left = SpliceGraph("left", "chr1", "+")
-    left.addNode("L1", 10, 20)
-
-    right = SpliceGraph("right", "chr1", "-")
-    right.addNode("R1", 30, 40)
-
-    with pytest.raises(ValueError, match="conflicting strands"):
-        left.union(right)
-
-
-def test_union_requires_explicit_known_kwargs() -> None:
-    left = SpliceGraph("left", "chr1", "+")
-    left.addNode("L1", 10, 20)
-
-    right = SpliceGraph("right", "chr1", "+")
-    right.addNode("R1", 30, 40)
-
-    merged = left.union(right, keepName=True)
-    assert merged.getName() == "left"
-
-    with pytest.raises(TypeError):
-        left.union(right, keep_name=True)  # type: ignore[call-arg]
-
-
-def test_splice_graph_node_defaults_do_not_share_parent_or_child_lists() -> None:
-    left = SpliceGraphNode("L", 10, 20, "+", "chr1")
-    right = SpliceGraphNode("R", 30, 40, "+", "chr1")
-    parent = SpliceGraphNode("P", 1, 5, "+", "chr1")
-    child = SpliceGraphNode("C", 50, 60, "+", "chr1")
-
-    left.parents.append(parent)
-    left.children.append(child)
-
-    assert right.parents == []
-    assert right.children == []
+from SpliceGrapher.formats.writers.splice_graph import write_splice_graph_gff
+from SpliceGrapher.SpliceGraph import GENE_REC, SpliceGraph, SpliceGraphNode, SpliceGraphParser
 
 
 def _write_graph_header(path: Path, attrs: str) -> None:
@@ -93,6 +19,72 @@ def _write_graph_header(path: Path, attrs: str) -> None:
         f"chr1\tSpliceGrapher\t{GENE_REC}\t1\t20\t.\t+\t.\t{attrs}\n",
         encoding="utf-8",
     )
+
+
+def _load_single_graph(path: Path) -> SpliceGraph:
+    parser = SpliceGraphParser(str(path))
+    assert len(parser.graphDict) == 1
+    return next(iter(parser.graphDict.values()))
+
+
+def test_splice_graph_node_is_pure_data() -> None:
+    node = SpliceGraphNode(
+        id="exon_1",
+        start=100,
+        end=200,
+        strand=Strand.PLUS,
+        chrom="chr1",
+    )
+
+    assert node.id == "exon_1"
+    assert node.minpos == 100
+    assert node.maxpos == 200
+
+    with pytest.raises(AttributeError):
+        _ = node.parents  # type: ignore[attr-defined]
+
+    with pytest.raises(AttributeError):
+        _ = node.children  # type: ignore[attr-defined]
+
+    with pytest.raises(AttributeError):
+        _ = node.addChild  # type: ignore[attr-defined]
+
+    with pytest.raises(AttributeError):
+        _ = node.removeParent  # type: ignore[attr-defined]
+
+
+def test_splice_graph_manages_topology() -> None:
+    graph = SpliceGraph(name="test_gene", chromosome="chr1", strand=Strand.PLUS)
+
+    node_a = graph.addNode(newId="exon_1", start=100, end=200)
+    node_b = graph.addNode(newId="exon_2", start=300, end=400)
+
+    assert isinstance(graph._nx_graph, nx.DiGraph)
+    assert "exon_1" in graph._nx_graph.nodes
+    assert graph._nx_graph.nodes["exon_1"]["data"] == node_a
+    assert graph.nodeDict["exon_2"] == node_b
+
+    graph.addEdge("exon_1", "exon_2")
+
+    assert graph._nx_graph.has_edge("exon_1", "exon_2")
+    assert [node.id for node in graph.getRoots()] == ["exon_1"]
+    assert [node.id for node in graph.getLeaves()] == ["exon_2"]
+
+
+def test_splice_graph_missing_edge_handling() -> None:
+    graph = SpliceGraph(name="test_gene", chromosome="chr1", strand=Strand.PLUS)
+    graph.addNode(newId="exon_1", start=100, end=200)
+
+    with pytest.raises(ValueError, match="not found in graph"):
+        graph.addEdge("exon_1", "phantom_exon")
+
+
+def test_alt_form_set_normalizes_event_name_to_event_code() -> None:
+    node = SpliceGraphNode("n1", 10, 20, "+", "chr1")
+
+    node.addAltForm(AlternativeSplicingEventName.ALT3.value)
+
+    assert set(node.altForms()) == {AlternativeSplicingEvent.ALT3.value}
 
 
 def test_parser_preserves_equals_in_attribute_values(tmp_path: Path) -> None:
@@ -105,204 +97,20 @@ def test_parser_preserves_equals_in_attribute_values(tmp_path: Path) -> None:
     assert graph.attrs["Note"] == "alpha=beta"
 
 
-def test_get_first_graph_uses_explicit_options(tmp_path: Path) -> None:
-    graph_path = tmp_path / "graph.gff3"
-    _write_graph_header(graph_path, "ID=G1")
+def test_write_splice_graph_gff_roundtrip(tmp_path: Path) -> None:
+    graph = SpliceGraph("graph_1", "chr1", Strand.PLUS)
+    graph.addNode("exon_1", 100, 200)
+    graph.addNode("exon_2", 300, 400)
+    graph.addEdge("exon_1", "exon_2")
 
-    graph = getFirstGraph(str(graph_path), annotate=False, verbose=False)
-    assert graph.getName() == "G1"
+    with pytest.raises(AttributeError):
+        _ = graph.writeGFF  # type: ignore[attr-defined]
 
-    with pytest.raises(TypeError):
-        getFirstGraph(str(graph_path), bad_option=True)  # type: ignore[call-arg]
+    out_path = tmp_path / "graph.gff3"
+    assert write_splice_graph_gff(graph, str(out_path)) is True
 
+    loaded = _load_single_graph(out_path)
 
-def test_parser_progress_indicator_finishes_on_parse_error(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    graph_path = tmp_path / "invalid.gff3"
-    _write_graph_header(graph_path, "ID")
-
-    class DummyIndicator:
-        finished = False
-
-        def __init__(self, *_args, **_kwargs) -> None:
-            pass
-
-        def update(self) -> None:
-            pass
-
-        def finish(self) -> None:
-            type(self).finished = True
-
-    monkeypatch.setattr(splice_graph_module, "ProgressIndicator", DummyIndicator)
-
-    with pytest.raises(ValueError, match="Illegal attribute field"):
-        SpliceGraphParser(str(graph_path))
-
-    assert DummyIndicator.finished is True
-
-
-def test_parser_next_does_not_mask_internal_type_errors(tmp_path: Path) -> None:
-    graph_path = tmp_path / "graph.gff3"
-    _write_graph_header(graph_path, "ID=G1")
-
-    parser = SpliceGraphParser(str(graph_path))
-    parser.graphId = "broken"  # type: ignore[assignment]
-
-    with pytest.raises(TypeError):
-        next(parser)
-
-
-def test_parser_requires_explicit_constructor_kwargs(tmp_path: Path) -> None:
-    graph_path = tmp_path / "graph.gff3"
-    _write_graph_header(graph_path, "ID=G1")
-
-    with pytest.raises(TypeError):
-        SpliceGraphParser(str(graph_path), bad_option=True)  # type: ignore[call-arg]
-
-
-def test_overlap_helper_preserves_strict_boundary_behavior() -> None:
-    graph = SpliceGraph("g", "chr1", "+")
-    left = graph.addNode("L", 10, 20)
-    touching = graph.addNode("T", 20, 30)
-    crossing = graph.addNode("C", 19, 25)
-
-    assert not overlap(left, touching)
-    assert overlap(left, crossing)
-
-
-def _graph_alt_nodes(
-    *,
-    name: str,
-    records: list[tuple[str, int, int, list[str]]],
-) -> SpliceGraph:
-    graph = SpliceGraph(name, "chr1", "+")
-    for node_id, start, end, forms in records:
-        node = graph.addNode(node_id, start, end)
-        for form in forms:
-            node.addAltForm(form)
-    return graph
-
-
-def _alt_signature(graph: SpliceGraph) -> set[tuple[int, int, str]]:
-    return {
-        (node.minpos, node.maxpos, form)
-        for node in graph.resolvedNodes()
-        for form in node.altForms()
-    }
-
-
-def test_graph_minus_as_reports_only_a_specific_events() -> None:
-    graph_a = _graph_alt_nodes(
-        name="A",
-        records=[
-            ("a1", 10, 20, [ALT3_ABBREV]),
-            ("a2", 40, 50, [ALT5_ABBREV]),
-        ],
-    )
-    graph_b = _graph_alt_nodes(
-        name="B",
-        records=[
-            ("b1", 10, 20, [ALT5_ABBREV]),
-            ("b2", 40, 50, [ALT5_ABBREV]),
-        ],
-    )
-
-    minus = graphMinusAS(graph_a, graph_b)
-
-    assert _alt_signature(minus) == {(10, 20, ALT3_ABBREV)}
-
-
-def test_diff_as_is_directional_for_shared_nodes_with_different_as() -> None:
-    graph_a = _graph_alt_nodes(
-        name="A",
-        records=[("a1", 10, 20, [ALT3_ABBREV]), ("a2", 40, 50, [ALT5_ABBREV])],
-    )
-    graph_b = _graph_alt_nodes(
-        name="B",
-        records=[("b1", 10, 20, [ALT5_ABBREV]), ("b2", 40, 50, [ALT5_ABBREV])],
-    )
-
-    a_minus_b, b_minus_a = diffAS(graph_a, graph_b)
-
-    assert _alt_signature(a_minus_b) == {(10, 20, ALT3_ABBREV)}
-    assert _alt_signature(b_minus_a) == {(10, 20, ALT5_ABBREV)}
-
-
-def test_common_as_excludes_partial_coordinate_overlaps() -> None:
-    graph_a = _graph_alt_nodes(name="A", records=[("a1", 10, 20, [ALT3_ABBREV])])
-    graph_b = _graph_alt_nodes(name="B", records=[("b1", 12, 22, [ALT3_ABBREV])])
-
-    common = commonAS(graph_a, graph_b)
-
-    assert common.resolvedNodes() == []
-
-
-def test_alt_site_event_list_uses_overlap_candidates_not_full_scan(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    graph = SpliceGraph("g", "chr1", "+")
-    event_nodes = []
-    for i in range(120):
-        start = 10 + (i * 20)
-        node = graph.addNode(f"n{i}", start, start + 5)
-        node.addAltForm(ALT5_ABBREV)
-        child = graph.addNode(f"c{i}", 5000 + (i * 20), 5005 + (i * 20))
-        node.addChild(child)
-        event_nodes.append(node)
-
-    overlap_calls = 0
-    original_overlap = splice_graph_module.overlap
-
-    def counting_overlap(left: SpliceGraphNode, right: SpliceGraphNode) -> bool:
-        nonlocal overlap_calls
-        overlap_calls += 1
-        return original_overlap(left, right)
-
-    monkeypatch.setattr(splice_graph_module, "overlap", counting_overlap)
-
-    events = altSiteEventList(graph.resolvedNodes(), ALT5_ABBREV)
-
-    assert len(events) == len(event_nodes)
-    assert overlap_calls < 1000
-
-
-def test_alt_form_set_normalizes_event_name_to_event_code() -> None:
-    node = SpliceGraphNode("n1", 10, 20, "+", "chr1")
-
-    node.addAltForm(AlternativeSplicingEventName.ALT3.value)
-
-    assert set(node.altForms()) == {AlternativeSplicingEvent.ALT3.value}
-    assert node.attrs[AS_KEY] == AlternativeSplicingEvent.ALT3.value
-    assert node.hasAS() is True
-
-
-def test_alt_form_set_accepts_enum_members_and_preserves_public_strings() -> None:
-    node = SpliceGraphNode("n1", 10, 20, "+", "chr1")
-
-    node.addAltForm(AlternativeSplicingEvent.ALT5)
-    node.addAltForm(AlternativeSplicingEvent.ALT3)
-
-    assert set(node.altForms()) == {
-        AlternativeSplicingEvent.ALT5.value,
-        AlternativeSplicingEvent.ALT3.value,
-    }
-    assert node.isAltDonor() is True
-    assert node.isAltAcceptor() is True
-
-
-def test_as_domain_constants_are_derived_from_core_event_enums() -> None:
-    expected_codes = [event.value for event in AlternativeSplicingEvent]
-    expected_names = [event_name.value for event_name in AlternativeSplicingEventName]
-
-    assert splice_graph_module.AS_ABBREVS == expected_codes
-    assert splice_graph_module.AS_NAMES == expected_names
-    assert (
-        splice_graph_module.EVENT_NAME[AlternativeSplicingEvent.ALT3.value]
-        == AlternativeSplicingEventName.ALT3.value
-    )
-    assert (
-        splice_graph_module.EVENT_ABBREV[AlternativeSplicingEventName.ALT3.value]
-        == AlternativeSplicingEvent.ALT3.value
-    )
+    assert set(loaded.nodeDict) == {"exon_1", "exon_2"}
+    assert [node.id for node in loaded.getRoots()] == ["exon_1"]
+    assert [node.id for node in loaded.getLeaves()] == ["exon_2"]

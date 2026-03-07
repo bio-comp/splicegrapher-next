@@ -2,8 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Collection, Iterator
-from contextlib import contextmanager
+from collections.abc import Callable, Collection
 from typing import TYPE_CHECKING, TextIO
 
 from SpliceGrapher.formats.serializers import (
@@ -11,6 +10,7 @@ from SpliceGrapher.formats.serializers import (
     gff_text_for_gene,
     gtf_text_for_gene,
 )
+from SpliceGrapher.shared.file_utils import open_output
 from SpliceGrapher.shared.progress import ProgressIndicator
 
 if TYPE_CHECKING:
@@ -27,15 +27,6 @@ def _gene_sort_key(gene: Gene) -> tuple[int, int, str]:
     return (gene.minpos, gene.maxpos, gene.id)
 
 
-@contextmanager
-def _open_output(path: str | TextIO) -> Iterator[TextIO]:
-    if isinstance(path, str):
-        with open(path, "w") as stream:
-            yield stream
-        return
-    yield path
-
-
 def write_gff(
     model: GeneModel,
     gff_path: str | TextIO,
@@ -45,7 +36,7 @@ def write_gff(
     verbose: bool = False,
 ) -> None:
     """Write full gene model to GFF output."""
-    with _open_output(gff_path) as out_stream:
+    with open_output(gff_path) as out_stream:
         chrom_list = sorted(model.all_chr)
         indicator = ProgressIndicator(10000, verbose=verbose)
         for chrom_name in chrom_list:
@@ -73,7 +64,7 @@ def write_gtf(
     verbose: bool = False,
 ) -> None:
     """Write full gene model to GTF output."""
-    with _open_output(gtf_path) as out_stream:
+    with open_output(gtf_path) as out_stream:
         chrom_list = sorted(model.all_chr)
         indicator = ProgressIndicator(10000, verbose=verbose)
         for chrom_name in chrom_list:
