@@ -51,7 +51,7 @@ def test_alignment_io_hot_path_signatures_are_explicit(func_name: str) -> None:
 def test_get_sam_read_data_rejects_unknown_keyword_argument(tmp_path: Path) -> None:
     fixture = build_alignment_fixture(tmp_path, repeat_scale=8)
     with pytest.raises(TypeError):
-        getSamReadData(str(fixture.bam), nonsense_option=True)
+        getattr(alignment_io, "getSamReadData")(str(fixture.bam), nonsense_option=True)
 
 
 def test_get_sam_read_data_depths_fallback_preserves_three_tuple_when_alignments_requested(
@@ -62,7 +62,7 @@ def test_get_sam_read_data_depths_fallback_preserves_three_tuple_when_alignments
     sample_path.write_text("placeholder\n", encoding="utf-8")
 
     fake_depths = {"chr1": [0, 1, 2]}
-    fake_junctions = {"chr1": []}
+    fake_junctions: dict[str, list[object]] = {"chr1": []}
 
     monkeypatch.setattr(alignment_io, "_is_depths_source", lambda source: True)
     monkeypatch.setattr(
