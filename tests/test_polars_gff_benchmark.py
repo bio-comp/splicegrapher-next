@@ -1,10 +1,20 @@
 from __future__ import annotations
 
 import json
+import tomllib
 from pathlib import Path
 
+from benchmarks import polars_gff_benchmark as benchmark
+
 from SpliceGrapher.formats import polars_gff
-from SpliceGrapher.formats import polars_gff_benchmark as benchmark
+
+
+def test_wheel_packages_only_runtime_namespace() -> None:
+    pyproject_path = Path(__file__).resolve().parents[1] / "pyproject.toml"
+    config = tomllib.loads(pyproject_path.read_text(encoding="utf-8"))
+
+    wheel_packages = config["tool"]["hatch"]["build"]["targets"]["wheel"]["packages"]
+    assert wheel_packages == ["SpliceGrapher"]
 
 
 def test_write_synthetic_gff_generates_expected_record_count(tmp_path: Path) -> None:

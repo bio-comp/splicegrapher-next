@@ -5,7 +5,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from SpliceGrapher.formats.polars_gff_benchmark import write_synthetic_gff
+from benchmarks.polars_gff_benchmark import write_synthetic_gff
 
 
 def _repo_root() -> Path:
