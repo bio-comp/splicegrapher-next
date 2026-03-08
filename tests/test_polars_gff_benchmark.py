@@ -1,10 +1,29 @@
 from __future__ import annotations
 
 import json
+import tomllib
 from pathlib import Path
+from typing import cast
 
+from benchmarks import polars_gff_benchmark as benchmark
 from SpliceGrapher.formats import polars_gff
-from SpliceGrapher.formats import polars_gff_benchmark as benchmark
+
+
+def test_wheel_packages_only_runtime_namespace() -> None:
+    pyproject_path = Path(__file__).resolve().parents[1] / "pyproject.toml"
+    config = tomllib.loads(pyproject_path.read_text(encoding="utf-8"))
+
+    wheel_packages = config["tool"]["hatch"]["build"]["targets"]["wheel"]["packages"]
+    assert wheel_packages == ["SpliceGrapher"]
+
+
+def test_benchmark_module_uses_process_rss_not_tracemalloc() -> None:
+    benchmark_path = Path(__file__).resolve().parents[1] / "benchmarks" / "polars_gff_benchmark.py"
+    source = benchmark_path.read_text(encoding="utf-8")
+
+    assert "import tracemalloc" not in source
+    assert "import resource" in source
+    assert "getrusage" in source
 
 
 def test_write_synthetic_gff_generates_expected_record_count(tmp_path: Path) -> None:
@@ -32,10 +51,20 @@ def test_benchmark_gff_path_without_polars_returns_core_loaders(tmp_path: Path) 
 
 
 def test_benchmark_matrix_marks_polars_unavailable(tmp_path: Path, monkeypatch) -> None:
-    def _raise_missing(path: str | Path, *, ignore_malformed: bool = False):
-        raise polars_gff.PolarsNotInstalledError("missing")
+    original_measure_loader = benchmark._measure_loader
 
-    monkeypatch.setattr(benchmark, "load_gff_to_polars", _raise_missing)
+    def _raise_missing(
+        measurement_name: benchmark.MeasurementName,
+        path: Path,
+        *,
+        iterations: int,
+        rows: int,
+    ) -> benchmark.BenchmarkMetrics:
+        if measurement_name == "polars_df":
+            raise polars_gff.PolarsNotInstalledError("missing")
+        return original_measure_loader(measurement_name, path, iterations=iterations, rows=rows)
+
+    monkeypatch.setattr(benchmark, "_measure_loader", _raise_missing)
 
     matrix = benchmark.benchmark_matrix(
         tmp_path,
@@ -100,9 +129,12 @@ def test_evaluation_json_contains_decision_and_two_classes(tmp_path: Path) -> No
     )
 
     payload = benchmark.evaluation_to_json_dict(evaluation)
+    synthetic_payload = cast(dict[str, dict[str, object]], payload["synthetic"])
+    real_payload = cast(dict[str, dict[str, object]], payload["real"])
+    decision_payload = cast(dict[str, object], payload["decision"])
     assert set(payload.keys()) == {"synthetic", "real", "decision"}
-    assert set(payload["synthetic"]["small"].keys()) == {"ingest", "end_to_end"}
-    assert set(payload["real"]["realA"].keys()) == {"ingest", "end_to_end"}
-    assert isinstance(payload["decision"]["recommendation"], str)
+    assert set(synthetic_payload["small"].keys()) == {"ingest", "end_to_end"}
+    assert set(real_payload["realA"].keys()) == {"ingest", "end_to_end"}
+    assert isinstance(decision_payload["recommendation"], str)
     # Ensure payload is cleanly serializable for report emission.
     json.dumps(payload)

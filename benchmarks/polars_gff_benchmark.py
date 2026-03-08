@@ -2,14 +2,18 @@
 
 from __future__ import annotations
 
+import gc
 import hashlib
 import json
-import tracemalloc
-from collections.abc import Callable
-from dataclasses import dataclass
+import multiprocessing
+import resource
+import sys
+from collections.abc import Callable, Mapping
+from dataclasses import asdict, dataclass
+from multiprocessing.connection import Connection
 from pathlib import Path
 from time import perf_counter
-from typing import TypedDict
+from typing import Literal, TypedDict, cast
 
 from SpliceGrapher.formats.gene_model import GeneModel
 from SpliceGrapher.formats.polars_gff import (
@@ -80,6 +84,20 @@ class AnalyticsPayload(TypedDict):
     junctions: list[tuple[str, int, int]]
 
 
+MeasurementMode = Literal["ingest", "analytics"]
+MeasurementName = Literal["gene_model", "rows", "polars_df"]
+
+
+class MeasurementPayload(TypedDict):
+    ok: bool
+    elapsed_seconds: float
+    peak_mebibytes: float
+    rows: int
+    analytics_signature: str | None
+    exception_type: str | None
+    exception_message: str | None
+
+
 def _as_int(value: int | str | None, *, field: str) -> int:
     if value is None:
         raise ValueError(f"Missing numeric value for {field}")
@@ -91,34 +109,120 @@ def _count_data_rows(path: Path) -> int:
         return sum(1 for line in handle if line.strip() and not line.startswith("#"))
 
 
+def _peak_rss_mebibytes() -> float:
+    peak_rss = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+    if sys.platform == "darwin":
+        return peak_rss / (1024.0 * 1024.0)
+    return peak_rss / 1024.0
+
+
+def _serialize_exception(exception: Exception) -> MeasurementPayload:
+    return {
+        "ok": False,
+        "elapsed_seconds": 0.0,
+        "peak_mebibytes": 0.0,
+        "rows": 0,
+        "analytics_signature": None,
+        "exception_type": type(exception).__name__,
+        "exception_message": str(exception),
+    }
+
+
+def _measurement_exception(payload: MeasurementPayload) -> Exception:
+    exception_type = payload["exception_type"] or "RuntimeError"
+    message = payload["exception_message"] or exception_type
+    if exception_type == "PolarsNotInstalledError":
+        return PolarsNotInstalledError(message)
+    return RuntimeError(f"{exception_type}: {message}")
+
+
+def _measure_iteration_child(
+    connection: Connection,
+    mode: MeasurementMode,
+    measurement_name: MeasurementName,
+    path_value: str,
+) -> None:
+    payload: MeasurementPayload
+    try:
+        path = Path(path_value)
+        gc.collect()
+        start = perf_counter()
+        if mode == "ingest":
+            _INGEST_LOADERS[measurement_name](path)
+            rows = _count_data_rows(path)
+            analytics_signature = None
+        else:
+            rows, analytics_signature = _ANALYTICS_WORKLOADS[measurement_name](path)
+        payload = {
+            "ok": True,
+            "elapsed_seconds": perf_counter() - start,
+            "peak_mebibytes": _peak_rss_mebibytes(),
+            "rows": rows,
+            "analytics_signature": analytics_signature,
+            "exception_type": None,
+            "exception_message": None,
+        }
+    except Exception as exc:  # pragma: no cover - child-process defensive path
+        payload = _serialize_exception(exc)
+
+    try:
+        connection.send(payload)
+    finally:
+        connection.close()
+
+
+def _measure_iteration(
+    mode: MeasurementMode,
+    measurement_name: MeasurementName,
+    path: Path,
+) -> MeasurementPayload:
+    context = multiprocessing.get_context("spawn")
+    parent_connection, child_connection = context.Pipe(duplex=False)
+    process = context.Process(
+        target=_measure_iteration_child,
+        args=(child_connection, mode, measurement_name, str(path)),
+    )
+    process.start()
+    child_connection.close()
+    try:
+        payload = cast(MeasurementPayload, parent_connection.recv())
+    except EOFError as exc:  # pragma: no cover - child-process crash path
+        process.join()
+        raise RuntimeError(
+            f"{measurement_name} measurement subprocess exited before returning data"
+        ) from exc
+    finally:
+        parent_connection.close()
+    process.join()
+    process.close()
+    return payload
+
+
 def _measure_loader(
-    loader: Callable[[Path], object],
+    measurement_name: MeasurementName,
     path: Path,
     *,
     iterations: int,
     rows: int,
 ) -> BenchmarkMetrics:
-    # Warm up once so one-time import/init overhead does not dominate metrics.
-    _ = loader(path)
+    warmup_payload = _measure_iteration("ingest", measurement_name, path)
+    if not warmup_payload["ok"]:
+        raise _measurement_exception(warmup_payload)
 
     timings: list[float] = []
-    peaks: list[int] = []
+    peaks: list[float] = []
 
     for _ in range(iterations):
-        tracemalloc.start()
-        start = perf_counter()
-        _ = loader(path)
-        elapsed = perf_counter() - start
-        _, peak = tracemalloc.get_traced_memory()
-        tracemalloc.stop()
-
-        timings.append(elapsed)
-        peaks.append(peak)
+        payload = _measure_iteration("ingest", measurement_name, path)
+        if not payload["ok"]:
+            raise _measurement_exception(payload)
+        timings.append(payload["elapsed_seconds"])
+        peaks.append(payload["peak_mebibytes"])
 
     return BenchmarkMetrics(
         mean_seconds=sum(timings) / len(timings),
         max_seconds=max(timings),
-        peak_mebibytes=max(peaks) / (1024.0 * 1024.0),
+        peak_mebibytes=max(peaks),
         rows=rows,
     )
 
@@ -126,7 +230,7 @@ def _measure_loader(
 def _error_metrics(
     rows: int,
     *,
-    exception: Exception,
+    exception_type: str,
     analytics_signature: str | None = None,
 ) -> BenchmarkMetrics:
     return BenchmarkMetrics(
@@ -134,44 +238,42 @@ def _error_metrics(
         max_seconds=0.0,
         peak_mebibytes=0.0,
         rows=rows,
-        status=f"error:{type(exception).__name__}",
+        status=f"error:{exception_type}",
         analytics_signature=analytics_signature,
     )
 
 
 def _measure_analytics_workload(
-    workload: Callable[[Path], tuple[int, str]],
+    measurement_name: MeasurementName,
     path: Path,
     *,
     iterations: int,
 ) -> BenchmarkMetrics:
-    # Warm up once so one-time import/init overhead does not dominate metrics.
-    warm_rows, warm_signature = workload(path)
+    warmup_payload = _measure_iteration("analytics", measurement_name, path)
+    if not warmup_payload["ok"]:
+        raise _measurement_exception(warmup_payload)
 
     timings: list[float] = []
-    peaks: list[int] = []
-    rows = warm_rows
-    signature = warm_signature
+    peaks: list[float] = []
+    rows = warmup_payload["rows"]
+    signature = warmup_payload["analytics_signature"]
 
     for _ in range(iterations):
-        tracemalloc.start()
-        start = perf_counter()
-        rows_i, signature_i = workload(path)
-        elapsed = perf_counter() - start
-        _, peak = tracemalloc.get_traced_memory()
-        tracemalloc.stop()
+        payload = _measure_iteration("analytics", measurement_name, path)
+        if not payload["ok"]:
+            raise _measurement_exception(payload)
 
-        if signature_i != signature:
+        if payload["analytics_signature"] != signature:
             raise ValueError("analytics signature drift within a single workload")
 
-        rows = rows_i
-        timings.append(elapsed)
-        peaks.append(peak)
+        rows = payload["rows"]
+        timings.append(payload["elapsed_seconds"])
+        peaks.append(payload["peak_mebibytes"])
 
     return BenchmarkMetrics(
         mean_seconds=sum(timings) / len(timings),
         max_seconds=max(timings),
-        peak_mebibytes=max(peaks) / (1024.0 * 1024.0),
+        peak_mebibytes=max(peaks),
         rows=rows,
         analytics_signature=signature,
     )
@@ -307,6 +409,19 @@ def _workload_gene_model(path: Path) -> tuple[int, str]:
     return len(records), _analytics_signature(records)
 
 
+_INGEST_LOADERS: dict[MeasurementName, Callable[[Path], object]] = {
+    "gene_model": lambda path: GeneModel.from_gff(str(path), verbose=False),
+    "rows": lambda path: load_gff_rows(path, ignore_malformed=False),
+    "polars_df": lambda path: load_gff_to_polars(path, ignore_malformed=False),
+}
+
+_ANALYTICS_WORKLOADS: dict[MeasurementName, Callable[[Path], tuple[int, str]]] = {
+    "gene_model": _workload_gene_model,
+    "rows": _workload_rows,
+    "polars_df": _workload_polars,
+}
+
+
 def _benchmark_classes_for_path(
     path: Path,
     *,
@@ -384,28 +499,28 @@ def benchmark_gff_path(
 
     try:
         results["gene_model"] = _measure_loader(
-            lambda p: GeneModel.from_gff(str(p), verbose=False),
+            "gene_model",
             gff_path,
             iterations=iterations,
             rows=rows,
         )
     except Exception as exc:  # pragma: no cover - defensive for heterogeneous fixtures
-        results["gene_model"] = _error_metrics(rows, exception=exc)
+        results["gene_model"] = _error_metrics(rows, exception_type=type(exc).__name__)
 
     try:
         results["rows"] = _measure_loader(
-            lambda p: load_gff_rows(p, ignore_malformed=False),
+            "rows",
             gff_path,
             iterations=iterations,
             rows=rows,
         )
     except Exception as exc:  # pragma: no cover - defensive for heterogeneous fixtures
-        results["rows"] = _error_metrics(rows, exception=exc)
+        results["rows"] = _error_metrics(rows, exception_type=type(exc).__name__)
 
     if include_polars:
         try:
             results["polars_df"] = _measure_loader(
-                lambda p: load_gff_to_polars(p, ignore_malformed=False),
+                "polars_df",
                 gff_path,
                 iterations=iterations,
                 rows=rows,
@@ -419,7 +534,7 @@ def benchmark_gff_path(
                 status="unavailable",
             )
         except Exception as exc:  # pragma: no cover - defensive for heterogeneous fixtures
-            results["polars_df"] = _error_metrics(rows, exception=exc)
+            results["polars_df"] = _error_metrics(rows, exception_type=type(exc).__name__)
 
     return results
 
@@ -440,26 +555,32 @@ def benchmark_end_to_end_gff_path(
 
     try:
         results["gene_model"] = _measure_analytics_workload(
-            _workload_gene_model,
+            "gene_model",
             gff_path,
             iterations=iterations,
         )
     except Exception as exc:  # pragma: no cover - defensive for heterogeneous fixtures
-        results["gene_model"] = _error_metrics(_count_data_rows(gff_path), exception=exc)
+        results["gene_model"] = _error_metrics(
+            _count_data_rows(gff_path),
+            exception_type=type(exc).__name__,
+        )
 
     try:
         results["rows"] = _measure_analytics_workload(
-            _workload_rows,
+            "rows",
             gff_path,
             iterations=iterations,
         )
     except Exception as exc:  # pragma: no cover - defensive for heterogeneous fixtures
-        results["rows"] = _error_metrics(_count_data_rows(gff_path), exception=exc)
+        results["rows"] = _error_metrics(
+            _count_data_rows(gff_path),
+            exception_type=type(exc).__name__,
+        )
 
     if include_polars:
         try:
             results["polars_df"] = _measure_analytics_workload(
-                _workload_polars,
+                "polars_df",
                 gff_path,
                 iterations=iterations,
             )
@@ -475,7 +596,7 @@ def benchmark_end_to_end_gff_path(
         except Exception as exc:  # pragma: no cover - defensive for heterogeneous fixtures
             results["polars_df"] = _error_metrics(
                 results["rows"].rows,
-                exception=exc,
+                exception_type=type(exc).__name__,
             )
 
     return results
@@ -591,8 +712,8 @@ def evaluate_go_no_go(real_end_to_end: dict[str, dict[str, BenchmarkMetrics]]) -
 def run_single_cycle_evaluation(
     *,
     synthetic_work_dir: str | Path,
-    real_datasets: dict[str, str | Path],
-    synthetic_dataset_sizes: dict[str, int] | None = None,
+    real_datasets: Mapping[str, str | Path],
+    synthetic_dataset_sizes: Mapping[str, int] | None = None,
     exons_per_gene: int = 3,
     iterations: int = 3,
     include_polars: bool = True,
@@ -645,36 +766,7 @@ def _metrics_to_dict(metrics: BenchmarkMetrics) -> dict[str, object]:
 
 def evaluation_to_json_dict(evaluation: SingleCycleEvaluation) -> dict[str, object]:
     """Convert single-cycle evaluation to JSON-safe dictionary payload."""
-
-    def convert_dataset(
-        section: dict[str, dict[str, dict[str, BenchmarkMetrics]]],
-    ) -> dict[str, dict[str, dict[str, dict[str, object]]]]:
-        payload: dict[str, dict[str, dict[str, dict[str, object]]]] = {}
-        for dataset, classes in section.items():
-            payload[dataset] = {}
-            for class_name, loaders in classes.items():
-                payload[dataset][class_name] = {
-                    loader_name: _metrics_to_dict(loader_metrics)
-                    for loader_name, loader_metrics in loaders.items()
-                }
-        return payload
-
-    return {
-        "synthetic": convert_dataset(evaluation.synthetic),
-        "real": convert_dataset(evaluation.real),
-        "decision": {
-            "recommendation": evaluation.decision.recommendation,
-            "decision": evaluation.decision.decision,
-            "evaluated_real_datasets": evaluation.decision.evaluated_real_datasets,
-            "compared_real_datasets": evaluation.decision.compared_real_datasets,
-            "winning_datasets": evaluation.decision.winning_datasets,
-            "runtime_speedup_threshold": evaluation.decision.runtime_speedup_threshold,
-            "memory_regression_threshold": evaluation.decision.memory_regression_threshold,
-            "required_real_datasets": evaluation.decision.required_real_datasets,
-            "min_winning_datasets": evaluation.decision.min_winning_datasets,
-            "notes": evaluation.decision.notes,
-        },
-    }
+    return cast(dict[str, object], asdict(evaluation))
 
 
 def matrix_to_markdown(matrix: dict[str, dict[str, BenchmarkMetrics]]) -> str:
