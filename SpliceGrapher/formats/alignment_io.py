@@ -50,25 +50,23 @@ class GeneBounds(Protocol):
     maxpos: int
 
 
-# Legacy public helper surface preserved for ABI stability.
-def isBamFile(filePath: str | PathLike[str]) -> bool:
-    """Simple heuristic returns True if path is a BAM file; false otherwise."""
-    return str(filePath).lower().endswith(".bam")
+def _is_bam_path(file_path: str | PathLike[str]) -> bool:
+    """Return ``True`` when the given path looks like a BAM file."""
+    return str(file_path).lower().endswith(".bam")
 
 
-def isCramFile(filePath: str | PathLike[str]) -> bool:
-    """Simple heuristic returns True if path is a CRAM file; false otherwise."""
-    return str(filePath).lower().endswith(".cram")
+def _is_cram_path(file_path: str | PathLike[str]) -> bool:
+    """Return ``True`` when the given path looks like a CRAM file."""
+    return str(file_path).lower().endswith(".cram")
 
 
-def makeChromosomeSet(chromList: ChromosomeInput) -> set[str] | None:
-    """Converts a string or a list of chromosomes into a set of unique values."""
-    chrom_set = None
-    if chromList:
-        if isinstance(chromList, str):
-            chromList = [chromList]
-        chrom_set = {chrom.lower() for chrom in chromList}
-    return chrom_set
+def _make_chromosome_set(chromosomes: ChromosomeInput) -> set[str] | None:
+    """Convert a chromosome selector into a lowercase set."""
+    if not chromosomes:
+        return None
+    if isinstance(chromosomes, str):
+        chromosomes = [chromosomes]
+    return {chrom.lower() for chrom in chromosomes}
 
 
 # Source normalization and alignment opening helpers.
@@ -180,10 +178,10 @@ def _open_alignment_file(
     """Open SAM/BAM/CRAM input with pysam and CRAM reference safeguards."""
     path_string = os.fspath(path)
 
-    if isBamFile(path_string):
+    if _is_bam_path(path_string):
         return pysam.AlignmentFile(path_string, "rb")
 
-    if isCramFile(path_string):
+    if _is_cram_path(path_string):
         try:
             if reference_fasta:
                 return pysam.AlignmentFile(
@@ -220,20 +218,6 @@ class AlignmentStreamer:
     def open_alignment(self) -> Iterator[pysam.AlignmentFile]:
         with _open_alignment_source(self.source, reference_fasta=self.reference_fasta) as alignment:
             yield alignment
-
-    def stream(self, *, chromosomes: ChromosomeInput = None) -> Iterator[pysam.AlignedSegment]:
-        chrom_set = makeChromosomeSet(chromosomes)
-        with self.open_alignment() as alignment:
-            for rec in alignment.fetch(until_eof=True):
-                if rec.is_unmapped:
-                    continue
-
-                if chrom_set:
-                    chrom_name = alignment.get_reference_name(rec.reference_id)
-                    if not chrom_name or chrom_name.lower() not in chrom_set:
-                        continue
-
-                yield rec
 
 
 def _next_match_anchor(cigar_tuples: list[tuple[int, int]], start_idx: int) -> int:
@@ -337,7 +321,7 @@ def _depth_map_to_arrays(
     }
 
 
-# Depths-file fallback bridge for legacy public wrappers.
+# Depths-file fallback bridge.
 def _is_depths_source(source: ReadDataSource) -> bool:
     """Return ``True`` when ``source`` should be handled as a depths file."""
     if not isinstance(source, (str, PathLike)):
@@ -457,7 +441,7 @@ def _collect_pysam_data(
     reference_fasta: ReferencePath = None,
 ) -> CollectResult | CollectResultWithAlignments:
     """Collect depths/junctions/alignment spans using pysam-backed iteration."""
-    chrom_set = makeChromosomeSet(chromosomes)
+    chrom_set = _make_chromosome_set(chromosomes)
 
     align: AlignmentMap = {}
     depths: DepthMap = {}
@@ -568,19 +552,11 @@ def _collect_pysam_data(
     return normalized_depths, normalized_junctions
 
 
-# Legacy public API wrappers.
-def pysamStrand(
-    pysamRecord: pysam.AlignedSegment,
-    tagDict: dict[str, str] | None = None,
-) -> str:
-    """Convenience method returns the strand given by the pysam record."""
-    if tagDict and STRAND_TAG in tagDict:
-        return tagDict[STRAND_TAG]
-    return _record_strand(pysamRecord)
-
-
-def pysamReadDepths(
-    bamFile: pysam.AlignmentFile,
+#
+# Public alignment API.
+#
+def calculate_gene_depths(
+    alignment_file: pysam.AlignmentFile,
     chromosome: str,
     gene: GeneBounds,
     *,
@@ -588,54 +564,52 @@ def pysamReadDepths(
     verbose: bool = False,
 ) -> tuple[int, numpy.ndarray]:
     """Returns a relative start position and an array of read depths for a gene."""
-    loBound = max(0, gene.minpos - margin)
-    upBound = gene.maxpos + margin
+    lo_bound = max(0, gene.minpos - margin)
+    up_bound = gene.maxpos + margin
 
-    nSpliced = 0
-    nUngapped = 0
-    result = numpy.zeros(upBound - loBound + 1, dtype=numpy.int32)
+    spliced_reads = 0
+    ungapped_reads = 0
+    result = numpy.zeros(up_bound - lo_bound + 1, dtype=numpy.int32)
 
-    for read in bamFile.fetch(chromosome, loBound, upBound):
+    for read in alignment_file.fetch(chromosome, lo_bound, up_bound):
         if read.is_unmapped:
             continue
 
         blocks = read.get_blocks()
         if len(blocks) > 1:
-            if pysamStrand(read) != gene.strand:
+            if _record_strand(read) != gene.strand:
                 continue
-            nSpliced += 1
+            spliced_reads += 1
         else:
-            nUngapped += 1
+            ungapped_reads += 1
 
         for block_start, block_end in blocks:
-            start = max(block_start + 1, loBound) - loBound
-            end = min(block_end, upBound) - loBound
+            start = max(block_start + 1, lo_bound) - lo_bound
+            end = min(block_end, up_bound) - lo_bound
             if end > start:
                 result[start:end] += 1
 
     if verbose:
         LOGGER.info(
-            "pysam_read_depths_loaded",
-            ungapped_reads=nUngapped,
-            spliced_reads=nSpliced,
+            "alignment_depths_loaded",
+            ungapped_reads=ungapped_reads,
+            spliced_reads=spliced_reads,
             gene_id=gene.id,
         )
 
-    return loBound, result
+    return lo_bound, result
 
 
-def getSamAlignments(
-    samRecords: AlignmentSource,
+def read_alignment_spans(
+    source: AlignmentSource,
     *,
-    verbose: bool = False,
     chromosomes: ChromosomeInput = None,
     maxpos: int = sys.maxsize,
     reference_fasta: ReferencePath = None,
 ) -> AlignmentMap:
     """Read alignments and return ``(start, span)`` tuples per chromosome."""
-    _ = verbose
     _, _, alignments = _collect_pysam_data(
-        samRecords,
+        source,
         alignments=True,
         chromosomes=chromosomes,
         junctions=False,
@@ -645,8 +619,8 @@ def getSamAlignments(
     return alignments
 
 
-def getSamDepths(
-    samRecords: ReadDataSource,
+def read_alignment_depths(
+    source: ReadDataSource,
     *,
     verbose: bool = False,
     maxpos: int = sys.maxsize,
@@ -654,9 +628,9 @@ def getSamDepths(
     reference_fasta: ReferencePath = None,
 ) -> DepthMap:
     """Return read depths indexed by chromosome for SAM/BAM/CRAM sources."""
-    if _is_depths_source(samRecords):
+    if _is_depths_source(source):
         depths, _ = _collect_depths_source_data(
-            cast(DepthSource, samRecords),
+            cast(DepthSource, source),
             alignments=False,
             include_depths=True,
             maxpos=maxpos,
@@ -668,7 +642,7 @@ def getSamDepths(
         return depths
 
     depths, _ = _collect_pysam_data(
-        cast(AlignmentSource, samRecords),
+        cast(AlignmentSource, source),
         chromosomes=chromosomes,
         junctions=False,
         maxpos=maxpos,
@@ -677,25 +651,25 @@ def getSamDepths(
     return depths
 
 
-def getSamHeaders(
-    samRecords: AlignmentSource,
+def read_alignment_headers(
+    source: AlignmentSource,
     *,
     reference_fasta: ReferencePath = None,
 ) -> list[str]:
     """Reads a SAM file and returns just the header strings as a list."""
-    streamer = AlignmentStreamer(samRecords, reference_fasta=reference_fasta)
+    streamer = AlignmentStreamer(source, reference_fasta=reference_fasta)
     with streamer.open_alignment() as sam_stream:
         return [line.strip() for line in str(sam_stream.header).splitlines() if line.strip()]
 
 
-def getSamHeaderInfo(
-    samStream: AlignmentSource,
+def read_alignment_chromosome_info(
+    source: AlignmentSource,
     *,
     verbose: bool = False,
     reference_fasta: ReferencePath = None,
-) -> tuple[set[str], None]:
-    """Return chromosome names from headers and no seed alignment line."""
-    streamer = AlignmentStreamer(samStream, reference_fasta=reference_fasta)
+) -> set[str]:
+    """Return chromosome names advertised by the alignment headers."""
+    streamer = AlignmentStreamer(source, reference_fasta=reference_fasta)
     with streamer.open_alignment() as stream:
         chroms = {name for name in stream.references}
 
@@ -703,11 +677,11 @@ def getSamHeaderInfo(
         LOGGER.info("sam_header_chromosome_count", chromosome_count=len(chroms))
         LOGGER.info("sam_header_chromosomes", chromosomes=",".join(sorted(chroms)))
 
-    return chroms, None
+    return chroms
 
 
-def getSamJunctions(
-    samRecords: ReadDataSource,
+def read_alignment_junctions(
+    source: ReadDataSource,
     *,
     verbose: bool = False,
     maxpos: int = sys.maxsize,
@@ -717,9 +691,9 @@ def getSamJunctions(
     reference_fasta: ReferencePath = None,
 ) -> JunctionMap:
     """Return splice junctions indexed by chromosome."""
-    if _is_depths_source(samRecords):
+    if _is_depths_source(source):
         _, jcts = _collect_depths_source_data(
-            cast(DepthSource, samRecords),
+            cast(DepthSource, source),
             alignments=False,
             include_depths=False,
             maxpos=maxpos,
@@ -731,7 +705,7 @@ def getSamJunctions(
         return jcts
 
     _, junctions = _collect_pysam_data(
-        cast(AlignmentSource, samRecords),
+        cast(AlignmentSource, source),
         chromosomes=chromosomes,
         maxpos=maxpos,
         minanchor=minanchor,
@@ -742,10 +716,10 @@ def getSamJunctions(
 
 
 @overload
-def getSamReadData(
-    samRecords: ReadDataSource,
+def collect_alignment_data(
+    source: ReadDataSource,
     *,
-    alignments: Literal[True],
+    include_alignments: Literal[True],
     chromosomes: ChromosomeInput = None,
     junctions: bool = True,
     maxpos: int = sys.maxsize,
@@ -757,10 +731,10 @@ def getSamReadData(
 
 
 @overload
-def getSamReadData(
-    samRecords: ReadDataSource,
+def collect_alignment_data(
+    source: ReadDataSource,
     *,
-    alignments: Literal[False] = False,
+    include_alignments: Literal[False] = False,
     chromosomes: ChromosomeInput = None,
     junctions: bool = True,
     maxpos: int = sys.maxsize,
@@ -771,10 +745,10 @@ def getSamReadData(
 ) -> CollectResult: ...
 
 
-def getSamReadData(
-    samRecords: ReadDataSource,
+def collect_alignment_data(
+    source: ReadDataSource,
     *,
-    alignments: bool = False,
+    include_alignments: bool = False,
     chromosomes: ChromosomeInput = None,
     junctions: bool = True,
     maxpos: int = sys.maxsize,
@@ -784,10 +758,10 @@ def getSamReadData(
     reference_fasta: ReferencePath = None,
 ) -> CollectResult | CollectResultWithAlignments:
     """Return depths and junctions (and optionally alignments) from alignment input."""
-    if _is_depths_source(samRecords):
-        if alignments:
+    if _is_depths_source(source):
+        if include_alignments:
             return _collect_depths_source_data(
-                cast(DepthSource, samRecords),
+                cast(DepthSource, source),
                 alignments=True,
                 include_depths=True,
                 maxpos=maxpos,
@@ -797,7 +771,7 @@ def getSamReadData(
                 verbose=verbose,
             )
         return _collect_depths_source_data(
-            cast(DepthSource, samRecords),
+            cast(DepthSource, source),
             alignments=False,
             include_depths=True,
             maxpos=maxpos,
@@ -808,9 +782,9 @@ def getSamReadData(
         )
 
     _ = verbose
-    if alignments:
+    if include_alignments:
         return _collect_pysam_data(
-            cast(AlignmentSource, samRecords),
+            cast(AlignmentSource, source),
             alignments=True,
             chromosomes=chromosomes,
             junctions=junctions,
@@ -820,7 +794,7 @@ def getSamReadData(
             reference_fasta=reference_fasta,
         )
     return _collect_pysam_data(
-        cast(AlignmentSource, samRecords),
+        cast(AlignmentSource, source),
         alignments=False,
         chromosomes=chromosomes,
         junctions=junctions,
@@ -831,12 +805,34 @@ def getSamReadData(
     )
 
 
-def getSamSequences(
-    samRecords: AlignmentSource,
+def read_alignment_sequences(
+    source: AlignmentSource,
     *,
     reference_fasta: ReferencePath = None,
 ) -> dict[str, str]:
     """Reads a SAM/BAM/CRAM input and returns sequence names and lengths."""
-    streamer = AlignmentStreamer(samRecords, reference_fasta=reference_fasta)
+    streamer = AlignmentStreamer(source, reference_fasta=reference_fasta)
     with streamer.open_alignment() as stream:
         return {name: str(stream.get_reference_length(name)) for name in stream.references}
+
+
+__all__ = [
+    "AlignmentMap",
+    "AlignmentSource",
+    "ChromosomeInput",
+    "CollectResult",
+    "CollectResultWithAlignments",
+    "DepthMap",
+    "GeneBounds",
+    "JunctionMap",
+    "ReadDataSource",
+    "ReferencePath",
+    "calculate_gene_depths",
+    "collect_alignment_data",
+    "read_alignment_chromosome_info",
+    "read_alignment_depths",
+    "read_alignment_headers",
+    "read_alignment_junctions",
+    "read_alignment_sequences",
+    "read_alignment_spans",
+]

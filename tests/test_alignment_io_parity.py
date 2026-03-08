@@ -2,7 +2,10 @@ from pathlib import Path
 
 import numpy
 
-from SpliceGrapher.formats.alignment_io import getSamJunctions, getSamReadData
+from SpliceGrapher.formats.alignment_io import (
+    collect_alignment_data,
+    read_alignment_junctions,
+)
 from tests.helpers.alignment_fixture_builder import build_alignment_fixture
 from tests.helpers.legacy_depth_reference import compute_depths_and_junctions
 
@@ -42,7 +45,7 @@ def test_alignment_fixture_builds_sam_bam_cram_and_annotations(tmp_path: Path):
 def test_bam_depth_and_junction_parity_against_legacy_reference(tmp_path: Path):
     fixture = build_alignment_fixture(tmp_path)
 
-    actual_depths, actual_junctions = getSamReadData(str(fixture.bam))
+    actual_depths, actual_junctions = collect_alignment_data(str(fixture.bam))
     expected_depths, expected_junctions = compute_depths_and_junctions(
         fixture.bam, fixture.chrom, fixture.region_start, fixture.region_end
     )
@@ -60,7 +63,7 @@ def test_bam_depth_and_junction_parity_against_legacy_reference(tmp_path: Path):
 def test_cram_reference_depths_available_for_parity_harness(tmp_path: Path):
     fixture = build_alignment_fixture(tmp_path)
 
-    cram_depths, cram_junctions = getSamReadData(
+    cram_depths, cram_junctions = collect_alignment_data(
         str(fixture.cram),
         reference_fasta=str(fixture.reference_fasta),
     )
@@ -86,8 +89,8 @@ def test_cram_reference_depths_available_for_parity_harness(tmp_path: Path):
 def test_sam_reference_depths_available_for_parity_harness(tmp_path: Path):
     fixture = build_alignment_fixture(tmp_path)
 
-    sam_junctions = getSamJunctions(str(fixture.sam), minjct=1)
-    sam_depths, _ = getSamReadData(str(fixture.sam), junctions=False)
+    sam_junctions = read_alignment_junctions(str(fixture.sam), minjct=1)
+    sam_depths, _ = collect_alignment_data(str(fixture.sam), junctions=False)
     expected_depths, expected_junctions = compute_depths_and_junctions(
         fixture.sam,
         fixture.chrom,
