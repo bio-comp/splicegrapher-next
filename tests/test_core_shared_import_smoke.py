@@ -13,9 +13,14 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 
-def test_import_splicegraph_module() -> None:
-    module = importlib.import_module("SpliceGrapher.SpliceGraph")
+def test_import_splice_graph_core_module() -> None:
+    module = importlib.import_module("SpliceGrapher.core.splice_graph")
     assert hasattr(module, "SpliceGraph")
+
+
+def test_import_splice_graph_parser_module() -> None:
+    module = importlib.import_module("SpliceGrapher.formats.parsers.splice_graph")
+    assert hasattr(module, "SpliceGraphParser")
 
 
 def test_import_shared_modules_without_utils_shim() -> None:
