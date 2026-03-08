@@ -5,7 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import tracemalloc
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from time import perf_counter
@@ -591,8 +591,8 @@ def evaluate_go_no_go(real_end_to_end: dict[str, dict[str, BenchmarkMetrics]]) -
 def run_single_cycle_evaluation(
     *,
     synthetic_work_dir: str | Path,
-    real_datasets: dict[str, str | Path],
-    synthetic_dataset_sizes: dict[str, int] | None = None,
+    real_datasets: Mapping[str, str | Path],
+    synthetic_dataset_sizes: Mapping[str, int] | None = None,
     exons_per_gene: int = 3,
     iterations: int = 3,
     include_polars: bool = True,

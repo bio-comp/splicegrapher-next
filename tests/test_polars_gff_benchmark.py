@@ -3,9 +3,9 @@ from __future__ import annotations
 import json
 import tomllib
 from pathlib import Path
+from typing import cast
 
 from benchmarks import polars_gff_benchmark as benchmark
-
 from SpliceGrapher.formats import polars_gff
 
 
@@ -110,9 +110,12 @@ def test_evaluation_json_contains_decision_and_two_classes(tmp_path: Path) -> No
     )
 
     payload = benchmark.evaluation_to_json_dict(evaluation)
+    synthetic_payload = cast(dict[str, dict[str, object]], payload["synthetic"])
+    real_payload = cast(dict[str, dict[str, object]], payload["real"])
+    decision_payload = cast(dict[str, object], payload["decision"])
     assert set(payload.keys()) == {"synthetic", "real", "decision"}
-    assert set(payload["synthetic"]["small"].keys()) == {"ingest", "end_to_end"}
-    assert set(payload["real"]["realA"].keys()) == {"ingest", "end_to_end"}
-    assert isinstance(payload["decision"]["recommendation"], str)
+    assert set(synthetic_payload["small"].keys()) == {"ingest", "end_to_end"}
+    assert set(real_payload["realA"].keys()) == {"ingest", "end_to_end"}
+    assert isinstance(decision_payload["recommendation"], str)
     # Ensure payload is cleanly serializable for report emission.
     json.dumps(payload)

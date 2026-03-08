@@ -8,7 +8,7 @@ import json
 import sys
 from pathlib import Path
 
-from SpliceGrapher.formats.polars_gff_benchmark import (
+from benchmarks.polars_gff_benchmark import (
     DEFAULT_DATASET_SIZES,
     REQUIRED_REAL_DATASETS,
     evaluation_to_json_dict,
