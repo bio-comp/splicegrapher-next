@@ -17,6 +17,15 @@ def test_wheel_packages_only_runtime_namespace() -> None:
     assert wheel_packages == ["SpliceGrapher"]
 
 
+def test_benchmark_module_uses_process_rss_not_tracemalloc() -> None:
+    benchmark_path = Path(__file__).resolve().parents[1] / "benchmarks" / "polars_gff_benchmark.py"
+    source = benchmark_path.read_text(encoding="utf-8")
+
+    assert "import tracemalloc" not in source
+    assert "import resource" in source
+    assert "getrusage" in source
+
+
 def test_write_synthetic_gff_generates_expected_record_count(tmp_path: Path) -> None:
     gff_path = tmp_path / "synthetic.gff3"
     row_count = benchmark.write_synthetic_gff(gff_path, gene_count=3, exons_per_gene=2)
@@ -42,10 +51,20 @@ def test_benchmark_gff_path_without_polars_returns_core_loaders(tmp_path: Path) 
 
 
 def test_benchmark_matrix_marks_polars_unavailable(tmp_path: Path, monkeypatch) -> None:
-    def _raise_missing(path: str | Path, *, ignore_malformed: bool = False):
-        raise polars_gff.PolarsNotInstalledError("missing")
+    original_measure_loader = benchmark._measure_loader
 
-    monkeypatch.setattr(benchmark, "load_gff_to_polars", _raise_missing)
+    def _raise_missing(
+        measurement_name: benchmark.MeasurementName,
+        path: Path,
+        *,
+        iterations: int,
+        rows: int,
+    ) -> benchmark.BenchmarkMetrics:
+        if measurement_name == "polars_df":
+            raise polars_gff.PolarsNotInstalledError("missing")
+        return original_measure_loader(measurement_name, path, iterations=iterations, rows=rows)
+
+    monkeypatch.setattr(benchmark, "_measure_loader", _raise_missing)
 
     matrix = benchmark.benchmark_matrix(
         tmp_path,
