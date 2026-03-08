@@ -10,7 +10,7 @@ from SpliceGrapher.core.interval_helpers import (
     interval_contains,
     intervals_overlap,
 )
-from SpliceGrapher.SpliceGraph import AS_KEY, SpliceGraph, SpliceGraphNode
+from SpliceGrapher.core.splice_graph import AS_KEY, SpliceGraph, SpliceGraphNode
 
 EdgeBounds = tuple[int, int]
 

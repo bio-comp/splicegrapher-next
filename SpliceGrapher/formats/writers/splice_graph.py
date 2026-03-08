@@ -7,11 +7,11 @@ from typing import TYPE_CHECKING, TextIO
 
 import structlog
 
+from SpliceGrapher.core.splice_graph import CHILD_REC, GENE_REC, PARENT_REC, SOURCE_NAME
 from SpliceGrapher.shared.file_utils import open_output
-from SpliceGrapher.SpliceGraph import CHILD_REC, GENE_REC, PARENT_REC, SOURCE_NAME
 
 if TYPE_CHECKING:
-    from SpliceGrapher.SpliceGraph import SpliceGraph, SpliceGraphNode
+    from SpliceGrapher.core.splice_graph import SpliceGraph, SpliceGraphNode
 
 LOGGER = structlog.get_logger(__name__)
 

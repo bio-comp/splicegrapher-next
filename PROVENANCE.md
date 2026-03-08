@@ -16,8 +16,9 @@ upstream/downstream integration work.
 Current tracked extraction baseline includes:
 
 - Identity/package artifacts: `SpliceGrapher/__init__.py`
-- Core/shared baseline: `SpliceGrapher/SpliceGraph.py`,
+- Core/shared baseline: `SpliceGrapher/core/splice_graph.py`,
   `SpliceGrapher/shared/*`
+- Parser baseline: `SpliceGrapher/formats/parsers/splice_graph.py`
 - Formats slice A baseline: `SpliceGrapher/formats/*` (current extracted files)
 - Residual batch-0 identity completion: `SpliceGrapher/SpliceGrapher.cfg`
 
@@ -122,7 +123,7 @@ Behavioral modifications from source baseline:
 Validation run:
 
 - `uv run pytest tests/test_core_shared_import_smoke.py -q`
-- `uv run python -c "import SpliceGrapher, SpliceGrapher.SpliceGraph, SpliceGrapher.shared.utils"`
+- `uv run python -c "import SpliceGrapher, SpliceGrapher.core.splice_graph, SpliceGrapher.formats.parsers.splice_graph"`
 - `uv build`
 
 ### 2026-02-24 - Residual identity cfg extraction (issue #6)
@@ -260,3 +261,37 @@ Validation run:
 - `uv run ruff format --check .`
 - `uv run pytest -q`
 - `uv build`
+
+### 2026-03-07 - Lowercase SpliceGraph hard split (issue #173)
+
+Date:
+
+- 2026-03-07
+
+Issue/PR:
+
+- Issue: #173
+- PR: (to be filled when opened)
+
+Source repository/path:
+
+- Repository: `bio-comp/splicegrapher-next`
+- Path: `SpliceGrapher/SpliceGraph.py`
+
+Destination paths:
+
+- `SpliceGrapher/core/splice_graph.py`
+- `SpliceGrapher/formats/parsers/splice_graph.py`
+- `tests/test_splice_graph.py`
+- `tests/test_core_shared_import_smoke.py`
+- `scripts/ci/check_clean_invariant.py`
+
+Behavioral modifications from source baseline:
+
+- Removed the PascalCase `SpliceGrapher/SpliceGraph.py` module entirely.
+- Split graph core and parser responsibilities into lowercase modules.
+- Rewrote SGN runtime and test imports directly to the new module paths with no compatibility shim.
+
+Validation run:
+
+- `PYTHONDONTWRITEBYTECODE=1 uv run pytest -q -p no:cacheprovider tests/test_splice_graph.py tests/test_graph_math.py tests/test_splicing_events.py tests/test_integration_simple.py tests/test_core_shared_import_smoke.py tests/test_clean_invariant_guard.py`

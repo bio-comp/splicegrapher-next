@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import cast
 
-from SpliceGrapher.SpliceGraph import SpliceGraph, SpliceGraphNode
+from SpliceGrapher.core.splice_graph import SpliceGraph, SpliceGraphNode
 
 EdgeCoords = tuple[int, int, int, int]
 

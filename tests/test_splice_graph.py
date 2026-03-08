@@ -10,8 +10,9 @@ from SpliceGrapher.core.enums import (
     AlternativeSplicingEventName,
     Strand,
 )
+from SpliceGrapher.core.splice_graph import GENE_REC, SpliceGraph, SpliceGraphNode
+from SpliceGrapher.formats.parsers.splice_graph import SpliceGraphParser
 from SpliceGrapher.formats.writers.splice_graph import write_splice_graph_gff
-from SpliceGrapher.SpliceGraph import GENE_REC, SpliceGraph, SpliceGraphNode, SpliceGraphParser
 
 
 def _write_graph_header(path: Path, attrs: str) -> None:

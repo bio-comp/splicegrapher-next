@@ -76,32 +76,32 @@ def test_find_magic_string_control_flow_flags_literal_branching() -> None:
     module = _load_guard_module()
 
     sources = {
-        "SpliceGrapher/SpliceGraph.py": 'if rec_type == "gene":\n    pass\n',
+        "SpliceGrapher/core/splice_graph.py": 'if rec_type == "gene":\n    pass\n',
     }
 
     violations = module.find_magic_string_control_flow(
         source_by_path=sources,
-        protected_paths=("SpliceGrapher/SpliceGraph.py",),
+        protected_paths=("SpliceGrapher/core/splice_graph.py",),
     )
 
     assert violations
-    assert "SpliceGrapher/SpliceGraph.py:1" in violations[0]
+    assert "SpliceGrapher/core/splice_graph.py:1" in violations[0]
 
 
 def test_find_manual_overlap_lines_detects_raw_coordinate_logic() -> None:
     module = _load_guard_module()
     sources = {
-        "SpliceGrapher/SpliceGraph.py": (
+        "SpliceGrapher/core/splice_graph.py": (
             "if a.minpos < b.maxpos and a.maxpos > b.minpos:\n    pass\n"
         ),
     }
 
     found = module.find_manual_overlap_lines(
         source_by_path=sources,
-        protected_paths=("SpliceGrapher/SpliceGraph.py",),
+        protected_paths=("SpliceGrapher/core/splice_graph.py",),
     )
 
-    assert found["SpliceGrapher/SpliceGraph.py"] == {
+    assert found["SpliceGrapher/core/splice_graph.py"] == {
         "if a.minpos < b.maxpos and a.maxpos > b.minpos:"
     }
 
