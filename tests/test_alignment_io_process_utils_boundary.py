@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 
 from SpliceGrapher.formats import alignment_io
-from SpliceGrapher.formats.alignment_io import getSamReadData
+from SpliceGrapher.formats.alignment_io import collect_alignment_data
 from tests.helpers.alignment_fixture_builder import build_alignment_fixture
 
 
@@ -32,13 +32,13 @@ def test_alignment_io_removes_manual_record_parser_and_list_growth_antipattern()
     [
         "_open_alignment_file",
         "_collect_pysam_data",
-        "pysamReadDepths",
-        "getSamAlignments",
-        "getSamDepths",
-        "getSamHeaders",
-        "getSamHeaderInfo",
-        "getSamJunctions",
-        "getSamReadData",
+        "calculate_gene_depths",
+        "read_alignment_spans",
+        "read_alignment_depths",
+        "read_alignment_headers",
+        "read_alignment_chromosome_info",
+        "read_alignment_junctions",
+        "collect_alignment_data",
     ],
 )
 def test_alignment_io_hot_path_signatures_are_explicit(func_name: str) -> None:
@@ -51,4 +51,32 @@ def test_alignment_io_hot_path_signatures_are_explicit(func_name: str) -> None:
 def test_get_sam_read_data_rejects_unknown_keyword_argument(tmp_path: Path) -> None:
     fixture = build_alignment_fixture(tmp_path, repeat_scale=8)
     with pytest.raises(TypeError):
-        getSamReadData(str(fixture.bam), nonsense_option=True)
+        collect_alignment_data(  # type: ignore[call-overload]
+            str(fixture.bam), nonsense_option=True
+        )
+
+
+def test_get_sam_read_data_depths_fallback_preserves_three_tuple_when_alignments_requested(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    sample_path = tmp_path / "sample.depths"
+    sample_path.write_text("placeholder\n", encoding="utf-8")
+
+    fake_depths = {"chr1": [0, 1, 2]}
+    fake_junctions: dict[str, list[object]] = {"chr1": []}
+
+    monkeypatch.setattr(alignment_io, "_is_depths_source", lambda source: True)
+    monkeypatch.setattr(
+        alignment_io,
+        "read_depths",
+        lambda *args, **kwargs: (fake_depths, fake_junctions),
+    )
+
+    depths, junctions, alignments = collect_alignment_data(
+        str(sample_path), include_alignments=True
+    )
+
+    assert list(depths["chr1"]) == [0, 1, 2]
+    assert junctions == fake_junctions
+    assert alignments == {}
