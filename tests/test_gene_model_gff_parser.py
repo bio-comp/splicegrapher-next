@@ -1,12 +1,15 @@
 from __future__ import annotations
 
+import importlib
 import inspect
 
 from SpliceGrapher.formats import gene_model as gm
-from SpliceGrapher.formats.parsers import gene_model_gff as parser_boundary
-from SpliceGrapher.formats.parsers import gene_model_gff_context as parser_context
-from SpliceGrapher.formats.parsers import gene_model_gff_handlers as parser_handlers
-from SpliceGrapher.formats.parsers import gene_model_gff_records as parser_records
+from SpliceGrapher.formats.parsers import load_gene_model_records
+
+parser_boundary = importlib.import_module("SpliceGrapher.formats.parsers.gene_model_gff")
+parser_context = importlib.import_module("SpliceGrapher.formats.parsers.gene_model_gff_context")
+parser_handlers = importlib.import_module("SpliceGrapher.formats.parsers.gene_model_gff_handlers")
+parser_records = importlib.import_module("SpliceGrapher.formats.parsers.gene_model_gff_records")
 
 
 def test_candidate_cache_uses_bounded_clear_policy() -> None:
@@ -59,5 +62,6 @@ def test_parser_modules_depend_on_models_module_not_gene_model_facade() -> None:
         ]
     )
 
+    assert callable(load_gene_model_records)
     assert "import SpliceGrapher.formats.models as model_domain" in source
     assert "import SpliceGrapher.formats.gene_model as gm" not in source
