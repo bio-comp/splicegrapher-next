@@ -17,7 +17,7 @@ from SpliceGrapher.core.interval_helpers import (
 )
 
 if TYPE_CHECKING:
-    from SpliceGrapher.formats.model_domain import Gene
+    from .domain import Gene
 
 
 @dataclass(slots=True)

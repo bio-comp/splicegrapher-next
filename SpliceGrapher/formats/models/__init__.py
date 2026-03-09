@@ -6,7 +6,7 @@ responsibility-based modules.
 
 from __future__ import annotations
 
-from SpliceGrapher.formats.model_domain import (
+from .domain import (
     CDS,
     CDS_TYPES,
     FORM_DELIMITERS,
@@ -51,7 +51,7 @@ from SpliceGrapher.formats.model_domain import (
     default_gene_filter,
     gene_type_filter,
 )
-from SpliceGrapher.formats.model_index import (
+from .index import (
     Chromosome,
     ChromosomeGeneIndex,
     IntervalQuery,
