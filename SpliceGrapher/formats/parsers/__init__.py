@@ -1,5 +1,6 @@
-"""Parser boundaries for formats modules."""
+"""Parser boundaries for format modules."""
 
-from SpliceGrapher.formats.parsers import gene_model_gff
+from .gene_model_gff import load_gene_model_records
+from .splice_graph import SpliceGraphParser
 
-__all__ = ["gene_model_gff"]
+__all__ = ["SpliceGraphParser", "load_gene_model_records"]

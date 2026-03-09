@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from typing import TextIO
 
 from SpliceGrapher.core.enum_coercion import coerce_enum
@@ -31,23 +32,15 @@ class SpliceGraphParser:
         if self.instream is None:
             raise ValueError("No input file stream given.")
         self.graphDict: dict[str, SpliceGraph] = {}
-        self._graph_keys: list[str] = []
-        self.loadFromFile()
+        self.load_from_file()
 
-    def __iter__(self) -> SpliceGraphParser:
-        return self
-
-    def __next__(self) -> SpliceGraph:
-        if self.graphId >= len(self._graph_keys):
-            raise StopIteration
-        key = self._graph_keys[self.graphId]
-        self.graphId += 1
-        return self.graphDict[key]
+    def __iter__(self) -> Iterator[SpliceGraph]:
+        return iter(self.graphDict.values())
 
     def __len__(self) -> int:
         return len(self.graphDict)
 
-    def loadFromFile(self) -> None:
+    def load_from_file(self) -> None:
         line_no = 0
         graph: SpliceGraph | None = None
         alias: dict[str, str] = {}
@@ -121,9 +114,6 @@ class SpliceGraphParser:
                     graph.addEdge(alias[parent_id], alias[child_id])
         finally:
             indicator.finish()
-
-        self.graphId = 0
-        self._graph_keys = list(self.graphDict.keys())
 
     @staticmethod
     def _parse_attributes(field: str, line_no: int) -> dict[str, str]:

@@ -98,6 +98,17 @@ def test_parser_preserves_equals_in_attribute_values(tmp_path: Path) -> None:
     assert graph.attrs["Note"] == "alpha=beta"
 
 
+def test_parser_iterates_over_graph_values_and_renames_loader(tmp_path: Path) -> None:
+    graph_path = tmp_path / "graph.gff3"
+    _write_graph_header(graph_path, "ID=G1")
+
+    parser = SpliceGraphParser(str(graph_path))
+
+    assert not hasattr(parser, "loadFromFile")
+    assert callable(parser.load_from_file)
+    assert [graph.getName() for graph in parser] == ["G1"]
+
+
 def test_write_splice_graph_gff_roundtrip(tmp_path: Path) -> None:
     graph = SpliceGraph("graph_1", "chr1", Strand.PLUS)
     graph.addNode("exon_1", 100, 200)
