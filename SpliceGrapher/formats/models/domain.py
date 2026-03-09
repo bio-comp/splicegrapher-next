@@ -14,7 +14,8 @@ from operator import attrgetter
 from typing import TypeVar
 
 from SpliceGrapher.core.enums import AttrKey, RecordType, Strand
-from SpliceGrapher.formats.model_index import _SpliceSiteLike, feature_sort_key
+
+from .index import _SpliceSiteLike, feature_sort_key
 
 KNOWN_RECTYPES = [
     RecordType.CDS,
