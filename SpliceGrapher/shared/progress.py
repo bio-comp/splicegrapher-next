@@ -99,6 +99,3 @@ class RandomListIterator(Generic[T], Iterator[T]):
         replacement, from a list."""
         i = self.rand.randint(0, self.limit)
         return self.values[i]
-
-    # Python 2 compatibility alias
-    next = __next__

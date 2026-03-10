@@ -9,13 +9,13 @@ def test_shared_modules_export_expected_helpers() -> None:
     file_utils_module = importlib.import_module("SpliceGrapher.shared.file_utils")
     format_utils_module = importlib.import_module("SpliceGrapher.shared.format_utils")
     collection_utils_module = importlib.import_module("SpliceGrapher.shared.collection_utils")
-    process_utils_module = importlib.import_module("SpliceGrapher.shared.process_utils")
+    process_module = importlib.import_module("SpliceGrapher.shared.process")
     progress_module = importlib.import_module("SpliceGrapher.shared.progress")
 
     assert hasattr(file_utils_module, "ez_open")
     assert hasattr(format_utils_module, "comma_format")
     assert hasattr(collection_utils_module, "as_list")
-    assert hasattr(process_utils_module, "getAttribute")
+    assert hasattr(process_module, "get_attribute")
     assert hasattr(progress_module, "ProgressIndicator")
 
 
