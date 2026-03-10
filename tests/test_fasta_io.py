@@ -19,7 +19,7 @@ def test_fasta_iterator_accepts_pathlib_paths(tmp_path: Path) -> None:
         ">chr1\nACGT\nAC\n>chr2\nTTAA\n",
     )
 
-    records = list(fasta.fasta_itr(fasta_path))
+    records = list(fasta.FastaIterator(fasta_path))
 
     assert [(record.header, record.sequence) for record in records] == [
         ("chr1", "ACGTAC"),
@@ -32,7 +32,7 @@ def test_fasta_iterator_accepts_open_file_handles(tmp_path: Path) -> None:
     fasta_path = _write_fasta(tmp_path / "handle.fa", ">seqA\nAACCGG\n")
 
     with fasta_path.open("r", encoding="utf-8") as handle:
-        records = list(fasta.fasta_itr(handle))
+        records = list(fasta.FastaIterator(handle))
 
     assert len(records) == 1
     assert records[0].header == "seqA"
@@ -43,7 +43,7 @@ def test_fasta_iterator_raises_on_blank_line(tmp_path: Path) -> None:
     fasta_path = _write_fasta(tmp_path / "bad.fa", ">seqA\nAA\n\nTT\n")
 
     with pytest.raises(fasta.MalformedInput):
-        list(fasta.fasta_itr(fasta_path))
+        list(fasta.FastaIterator(fasta_path))
 
 
 def test_get_sequence_preserves_long_headers(tmp_path: Path) -> None:
@@ -54,9 +54,9 @@ def test_get_sequence_preserves_long_headers(tmp_path: Path) -> None:
 
     record = fasta.get_sequence(fasta_path, "chr1 transcript A")
     by_prefix = fasta.fasta_get_by_name(
-        iter(fasta.fasta_itr(fasta_path)),
+        iter(fasta.FastaIterator(fasta_path)),
         "chr1",
-        byLength=True,
+        by_length=True,
     )
 
     assert record is not None
@@ -71,7 +71,7 @@ def test_fasta_iterator_reads_gzipped_input(tmp_path: Path) -> None:
     with gzip.open(fasta_path, "wt", encoding="utf-8") as handle:
         handle.write(">gz_rec\nACGT\n")
 
-    records = list(fasta.fasta_itr(str(fasta_path)))
+    records = list(fasta.FastaIterator(str(fasta_path)))
 
     assert len(records) == 1
     assert records[0].header == "gz_rec"

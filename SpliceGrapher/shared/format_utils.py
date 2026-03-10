@@ -3,11 +3,14 @@
 from __future__ import annotations
 
 import re
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 from datetime import datetime, timezone
+from typing import TypeVar
 
 _INT_PATTERN = re.compile(r"^[+-]?\d+$")
 _FLOAT_PATTERN = re.compile(r"^[+-]?(?:\d+\.\d*|\.\d+|\d+)(?:[eE][+-]?\d+)?$")
+_KeyT = TypeVar("_KeyT")
+_ValueT = TypeVar("_ValueT")
 
 
 def comma_format(value: int | float | str) -> str:
@@ -20,7 +23,7 @@ def comma_format(value: int | float | str) -> str:
     return f"{value:,}"
 
 
-def dict_string(value_dict: dict[object, object], delim: str = ",") -> str:
+def dict_string(value_dict: Mapping[_KeyT, _ValueT], delim: str = ",") -> str:
     """Return a simple string representation for a mapping."""
     return delim.join(f"{key} -> {value}" for key, value in value_dict.items())
 

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import cast
 
 from pydantic import BaseModel, Field, ValidationError
 from pydantic_settings import (
@@ -91,8 +92,9 @@ def load_config(path: str | Path = DEFAULT_CONFIG) -> SpliceGrapherConfig:
         raise ConfigNotFoundError(f"Configuration file not found at {config_path!s}")
 
     config_class = _config_class_for_toml_file(config_path)
+    settings_loader = cast(type[BaseSettings], config_class)
     try:
-        return config_class()
+        return cast(SpliceGrapherConfig, settings_loader())
     except ValidationError as exc:
         raise ConfigValidationError(
             f"Invalid TOML configuration values in {config_path!s}: {exc}"
@@ -100,12 +102,15 @@ def load_config(path: str | Path = DEFAULT_CONFIG) -> SpliceGrapherConfig:
 
 
 def _config_class_for_toml_file(config_path: Path) -> type[SpliceGrapherConfig]:
-    base_config = dict(SpliceGrapherConfig.model_config)
-    base_config["toml_file"] = str(config_path)
-    return type(
-        "SpliceGrapherFileConfig",
-        (SpliceGrapherConfig,),
-        {"model_config": SettingsConfigDict(**base_config)},
+    model_config = SpliceGrapherConfig.model_config.copy()
+    model_config["toml_file"] = str(config_path)
+    return cast(
+        type[SpliceGrapherConfig],
+        type(
+            "SpliceGrapherFileConfig",
+            (SpliceGrapherConfig,),
+            {"model_config": model_config},
+        ),
     )
 
 

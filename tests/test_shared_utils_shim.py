@@ -19,11 +19,13 @@ def test_shared_modules_export_expected_helpers() -> None:
     assert hasattr(progress_module, "ProgressIndicator")
 
 
-def test_fasta_import_uses_focused_file_utils_module() -> None:
+def test_fasta_readers_use_focused_file_utils_module() -> None:
     fasta_module = importlib.import_module("SpliceGrapher.formats.fasta")
+    readers_module = importlib.import_module("SpliceGrapher.formats.fasta.readers")
     file_utils_module = importlib.import_module("SpliceGrapher.shared.file_utils")
 
-    assert fasta_module.ez_open is file_utils_module.ez_open
+    assert not hasattr(fasta_module, "ez_open")
+    assert readers_module.ez_open is file_utils_module.ez_open
 
 
 def test_representative_focused_utility_behavior() -> None:
