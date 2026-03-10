@@ -98,10 +98,10 @@ class SpliceGraphNode:
     start: int
     end: int
     attrs: dict[str, NodeAttributeValue]
-    altFormSet: set[AlternativeSplicingEvent]
-    isoformSet: set[str]
-    origStart: int
-    origEnd: int
+    alt_form_set: set[AlternativeSplicingEvent]
+    isoform_set: set[str]
+    orig_start: int
+    orig_end: int
 
     def __init__(
         self,
@@ -123,44 +123,44 @@ class SpliceGraphNode:
             self.start = self.minpos
             self.end = self.maxpos
         self.attrs = {}
-        self.altFormSet = set()
-        self.isoformSet = set()
-        self.origStart = self.start
-        self.origEnd = self.end
+        self.alt_form_set = set()
+        self.isoform_set = set()
+        self.orig_start = self.start
+        self.orig_end = self.end
 
-    def acceptorEnd(self) -> int:
+    def acceptor_end(self) -> int:
         return self.start
 
-    def donorEnd(self) -> int:
+    def donor_end(self) -> int:
         return self.end
 
     def _sync_alt_form_attr(self) -> None:
-        self.attrs[AS_KEY] = ",".join(sorted(form.value for form in self.altFormSet))
+        self.attrs[AS_KEY] = ",".join(sorted(form.value for form in self.alt_form_set))
 
-    def addAltForm(
+    def add_alt_form(
         self,
         form: str | AlternativeSplicingEvent | AlternativeSplicingEventName,
     ) -> None:
         if isinstance(form, str) and not form.strip():
             return
         event = _coerce_alt_splicing_event(form)
-        self.altFormSet.add(event)
+        self.alt_form_set.add(event)
         self._sync_alt_form_attr()
 
-    def removeAltForm(
+    def remove_alt_form(
         self,
         form: str | AlternativeSplicingEvent | AlternativeSplicingEventName,
     ) -> None:
         if isinstance(form, str) and not form.strip():
             return
         event = _coerce_alt_splicing_event(form)
-        self.altFormSet.discard(event)
+        self.alt_form_set.discard(event)
         self._sync_alt_form_attr()
 
-    def addAttribute(self, key: str, value: NodeAttributeValue) -> None:
+    def add_attribute(self, key: str, value: NodeAttributeValue) -> None:
         self.attrs[key] = value
 
-    def addCodon(self, codon: tuple[int, int], codon_type: str) -> None:
+    def add_codon(self, codon: tuple[int, int], codon_type: str) -> None:
         if len(codon) != 2:
             raise ValueError(f"Codons must be 2-tuples; received {codon!r}")
         pos = min(codon) if self.strand == Strand.PLUS.value else max(codon)
@@ -170,41 +170,41 @@ class SpliceGraphNode:
                 raise TypeError(f"Codon attribute {codon_type} is not a set")
             existing.add(pos)
 
-    def addStartCodon(self, codon: tuple[int, int]) -> None:
-        self.addCodon(codon, START_CODON_KEY)
+    def add_start_codon(self, codon: tuple[int, int]) -> None:
+        self.add_codon(codon, START_CODON_KEY)
 
-    def addEndCodon(self, codon: tuple[int, int]) -> None:
-        self.addCodon(codon, END_CODON_KEY)
+    def add_end_codon(self, codon: tuple[int, int]) -> None:
+        self.add_codon(codon, END_CODON_KEY)
 
-    def addFormsFromString(self, forms: str) -> None:
+    def add_forms_from_string(self, forms: str) -> None:
         for form in forms.split(","):
-            self.addAltForm(form.strip())
+            self.add_alt_form(form.strip())
 
-    def addIsoform(self, isoform: str) -> None:
+    def add_isoform(self, isoform: str) -> None:
         if isoform is None:
             raise ValueError(f"Received illegal isoform for {self.id}")
-        self.isoformSet.add(isoform)
-        self.attrs[ISO_KEY] = ",".join(sorted(self.isoformSet))
+        self.isoform_set.add(isoform)
+        self.attrs[ISO_KEY] = ",".join(sorted(self.isoform_set))
 
-    def addIsoformString(self, isoform_string: str) -> None:
+    def add_isoform_string(self, isoform_string: str) -> None:
         for isoform in isoform_string.split(","):
             cleaned = isoform.strip()
             if cleaned:
-                self.addIsoform(cleaned)
+                self.add_isoform(cleaned)
 
-    def altForms(self) -> list[str]:
-        return [form.value for form in sorted(self.altFormSet, key=lambda form: form.value)]
+    def alt_forms(self) -> list[str]:
+        return [form.value for form in sorted(self.alt_form_set, key=lambda form: form.value)]
 
-    def altFormString(self) -> str:
+    def alt_form_string(self) -> str:
         value = self.attrs.get(AS_KEY)
         return value if isinstance(value, str) else ""
 
-    def attributeString(self) -> str:
+    def attribute_string(self) -> str:
         attr_parts: list[str] = []
         for key in sorted(self.attrs):
-            if key == AS_KEY and not self.altFormSet:
+            if key == AS_KEY and not self.alt_form_set:
                 continue
-            if key == ISO_KEY and not self.isoformSet:
+            if key == ISO_KEY and not self.isoform_set:
                 continue
             value = self.attrs[key]
             if isinstance(value, set):
@@ -220,7 +220,7 @@ class SpliceGraphNode:
             return sorted(value)
         return []
 
-    def codonString(self, codon_type: str) -> str | None:
+    def codon_string(self, codon_type: str) -> str | None:
         codons = self.codons(codon_type)
         if not codons:
             return None
@@ -229,67 +229,67 @@ class SpliceGraphNode:
     def contains(self, pos: int) -> bool:
         return self.minpos <= pos <= self.maxpos
 
-    def downstreamOf(self, pos: int) -> bool:
+    def downstream_of(self, pos: int) -> bool:
         return self.minpos > pos if self.strand == Strand.PLUS.value else self.maxpos < pos
 
-    def endCodons(self) -> list[int]:
+    def end_codons(self) -> list[int]:
         return self.codons(END_CODON_KEY)
 
-    def endCodonString(self) -> str | None:
-        return self.codonString(END_CODON_KEY)
+    def end_codon_string(self) -> str | None:
+        return self.codon_string(END_CODON_KEY)
 
-    def hasAS(self) -> bool:
-        return bool(self.altFormSet)
+    def has_as(self) -> bool:
+        return bool(self.alt_form_set)
 
-    def hasDisposition(self, disposition: str) -> bool:
+    def has_disposition(self, disposition: str) -> bool:
         value = self.attrs.get(DISPOSITION_KEY)
         return value == disposition
 
-    def isAltAcceptor(self) -> bool:
-        return AlternativeSplicingEvent.ALT3 in self.altFormSet
+    def is_alt_acceptor(self) -> bool:
+        return AlternativeSplicingEvent.ALT3 in self.alt_form_set
 
-    def isAltDonor(self) -> bool:
-        return AlternativeSplicingEvent.ALT5 in self.altFormSet
+    def is_alt_donor(self) -> bool:
+        return AlternativeSplicingEvent.ALT5 in self.alt_form_set
 
-    def isKnown(self) -> bool:
-        return self.hasDisposition(KNOWN_NODE)
+    def is_known(self) -> bool:
+        return self.has_disposition(KNOWN_NODE)
 
-    def isPredicted(self) -> bool:
-        return self.hasDisposition(PREDICTED_NODE)
+    def is_predicted(self) -> bool:
+        return self.has_disposition(PREDICTED_NODE)
 
-    def isRetainedIntron(self) -> bool:
-        return AlternativeSplicingEvent.IR in self.altFormSet
+    def is_retained_intron(self) -> bool:
+        return AlternativeSplicingEvent.IR in self.alt_form_set
 
-    def isSkippedExon(self) -> bool:
-        return AlternativeSplicingEvent.ES in self.altFormSet
+    def is_skipped_exon(self) -> bool:
+        return AlternativeSplicingEvent.ES in self.alt_form_set
 
-    def isUnresolved(self) -> bool:
-        return self.hasDisposition(UNRESOLVED_NODE)
+    def is_unresolved(self) -> bool:
+        return self.has_disposition(UNRESOLVED_NODE)
 
-    def isoformList(self) -> list[str]:
-        return sorted(self.isoformSet)
+    def isoform_list(self) -> list[str]:
+        return sorted(self.isoform_set)
 
-    def isoformString(self) -> str | None:
+    def isoform_string(self) -> str | None:
         value = self.attrs.get(ISO_KEY)
         return value if isinstance(value, str) else None
 
-    def putativeChildren(self) -> set[str]:
+    def putative_children(self) -> set[str]:
         value = self.attrs.get(PUTATIVE_CHILDREN)
         if isinstance(value, str) and value:
             return set(value.split(","))
         return set()
 
-    def putativeParents(self) -> set[str]:
+    def putative_parents(self) -> set[str]:
         value = self.attrs.get(PUTATIVE_PARENTS)
         if isinstance(value, str) and value:
             return set(value.split(","))
         return set()
 
-    def startCodons(self) -> list[int]:
+    def start_codons(self) -> list[int]:
         return self.codons(START_CODON_KEY)
 
-    def startCodonString(self) -> str | None:
-        return self.codonString(START_CODON_KEY)
+    def start_codon_string(self) -> str | None:
+        return self.codon_string(START_CODON_KEY)
 
     def update(self, minpos: int, maxpos: int) -> None:
         self.minpos = minpos
@@ -301,7 +301,7 @@ class SpliceGraphNode:
             self.start = minpos
             self.end = maxpos
 
-    def upstreamOf(self, pos: int) -> bool:
+    def upstream_of(self, pos: int) -> bool:
         return self.maxpos < pos if self.strand == Strand.PLUS.value else self.minpos > pos
 
     def __eq__(self, other: object) -> bool:
@@ -335,10 +335,10 @@ class SpliceGraph:
         self.minpos = sys.maxsize
         self.maxpos = 0
         self._nx_graph: nx.DiGraph = nx.DiGraph()
-        self.setName(name)
+        self.set_name(name)
 
     @property
-    def nodeDict(self) -> dict[str, SpliceGraphNode]:
+    def node_dict(self) -> dict[str, SpliceGraphNode]:
         return {
             node_id: node_data["data"] for node_id, node_data in self._nx_graph.nodes(data=True)
         }
@@ -349,13 +349,13 @@ class SpliceGraph:
 
     def _find_existing_node(self, start: int, end: int) -> SpliceGraphNode | None:
         probe = NullNode(start, end)
-        for node in self.nodeDict.values():
+        for node in self.node_dict.values():
             if node == probe:
                 return node
         return None
 
     def _recompute_bounds(self) -> None:
-        nodes = list(self.nodeDict.values())
+        nodes = list(self.node_dict.values())
         if not nodes:
             self.minpos = sys.maxsize
             self.maxpos = 0
@@ -368,67 +368,67 @@ class SpliceGraph:
             return node_or_id
         return self._nx_graph.nodes[node_or_id]["data"]
 
-    def addNode(self, newId: str, start: int, end: int) -> SpliceGraphNode:
+    def add_node(self, new_id: str, start: int, end: int) -> SpliceGraphNode:
         existing = self._find_existing_node(start, end)
         if existing is not None:
             return existing
-        node = SpliceGraphNode(newId, start, end, self.strand, self.chromosome)
+        node = SpliceGraphNode(new_id, start, end, self.strand, self.chromosome)
         self._nx_graph.add_node(node.id, data=node)
         self.minpos = min(self.minpos, node.minpos)
         self.maxpos = max(self.maxpos, node.maxpos)
         return node
 
-    def addCodons(self, codon_list: Iterable[tuple[int, int]], codon_type: str) -> None:
+    def add_codons(self, codon_list: Iterable[tuple[int, int]], codon_type: str) -> None:
         for codon in codon_list:
-            for node in self.nodeDict.values():
-                node.addCodon(codon, codon_type)
+            for node in self.node_dict.values():
+                node.add_codon(codon, codon_type)
 
-    def addEdge(self, pid: str, cid: str) -> None:
+    def add_edge(self, pid: str, cid: str) -> None:
         if pid not in self._nx_graph:
             raise ValueError(f"Error adding edge: parent node {pid} not found in graph")
         if cid not in self._nx_graph:
             raise ValueError(f"Error adding edge: child node {cid} not found in graph")
         self._nx_graph.add_edge(pid, cid)
 
-    def addEndCodons(self, codon_list: Iterable[tuple[int, int]]) -> None:
-        self.addCodons(codon_list, END_CODON_KEY)
+    def add_end_codons(self, codon_list: Iterable[tuple[int, int]]) -> None:
+        self.add_codons(codon_list, END_CODON_KEY)
 
-    def addStartCodons(self, codon_list: Iterable[tuple[int, int]]) -> None:
-        self.addCodons(codon_list, START_CODON_KEY)
+    def add_start_codons(self, codon_list: Iterable[tuple[int, int]]) -> None:
+        self.add_codons(codon_list, START_CODON_KEY)
 
     def adjust(self, adjustment: int) -> None:
-        for node in self.nodeDict.values():
+        for node in self.node_dict.values():
             node.update(node.minpos + adjustment, node.maxpos + adjustment)
-        if self.nodeDict:
+        if self.node_dict:
             self.minpos += adjustment
             self.maxpos += adjustment
 
-    def attributeString(self) -> str:
+    def attribute_string(self) -> str:
         return ";".join(f"{key}={self.attrs[key]}" for key in sorted(self.attrs))
 
-    def deleteNode(self, node_id: str | SpliceGraphNode) -> SpliceGraphNode:
+    def delete_node(self, node_id: str | SpliceGraphNode) -> SpliceGraphNode:
         node = self._node(node_id)
         self._nx_graph.remove_node(node.id)
         self._recompute_bounds()
         return node
 
-    def getLeaves(self) -> list[SpliceGraphNode]:
+    def get_leaves(self) -> list[SpliceGraphNode]:
         return self._sorted_nodes(
             node_id for node_id, degree in self._nx_graph.out_degree() if degree == 0
         )
 
-    def getName(self) -> str:
+    def get_name(self) -> str:
         return self.attrs[ID_ATTR]
 
-    def getNode(self, start: int, end: int) -> SpliceGraphNode | None:
+    def get_node(self, start: int, end: int) -> SpliceGraphNode | None:
         return self._find_existing_node(start, end)
 
-    def getRoots(self) -> list[SpliceGraphNode]:
+    def get_roots(self) -> list[SpliceGraphNode]:
         return self._sorted_nodes(
             node_id for node_id, degree in self._nx_graph.in_degree() if degree == 0
         )
 
-    def isEmpty(self) -> bool:
+    def is_empty(self) -> bool:
         return self._nx_graph.number_of_nodes() == 0
 
     def predecessors(self, node_or_id: str | SpliceGraphNode) -> list[SpliceGraphNode]:
@@ -438,10 +438,10 @@ class SpliceGraph:
     def predecessor_ids(self, node_id: str) -> list[str]:
         return sorted(self._nx_graph.predecessors(node_id))
 
-    def resolvedNodes(self) -> list[SpliceGraphNode]:
-        return [node for node in self.nodeDict.values() if not node.isUnresolved()]
+    def resolved_nodes(self) -> list[SpliceGraphNode]:
+        return [node for node in self.node_dict.values() if not node.is_unresolved()]
 
-    def setName(self, name: str) -> None:
+    def set_name(self, name: str) -> None:
         self.attrs[ID_ATTR] = name
 
     def successors(self, node_or_id: str | SpliceGraphNode) -> list[SpliceGraphNode]:
@@ -451,16 +451,16 @@ class SpliceGraph:
     def successor_ids(self, node_id: str) -> list[str]:
         return sorted(self._nx_graph.successors(node_id))
 
-    def unresolvedNodes(self) -> list[SpliceGraphNode]:
-        return [node for node in self.nodeDict.values() if node.isUnresolved()]
+    def unresolved_nodes(self) -> list[SpliceGraphNode]:
+        return [node for node in self.node_dict.values() if node.is_unresolved()]
 
     def validate(self, halt: bool = False) -> str | None:
         reason: str | None = None
         if self._nx_graph.number_of_nodes() == 0:
             reason = "Graph is empty."
         else:
-            roots = self.getRoots()
-            leaves = self.getLeaves()
+            roots = self.get_roots()
+            leaves = self.get_leaves()
             if not roots or not leaves:
                 reason = (
                     f"Graph is missing roots or leaves ({len(roots)} roots, {len(leaves)} leaves)"
@@ -478,7 +478,7 @@ class SpliceGraph:
 
     def __str__(self) -> str:
         return (
-            f"{self.getName()} ({self.strand}) {self.minpos}-{self.maxpos} "
+            f"{self.get_name()} ({self.strand}) {self.minpos}-{self.maxpos} "
             f"({self._nx_graph.number_of_nodes()} nodes)"
         )
 

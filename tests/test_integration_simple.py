@@ -9,16 +9,16 @@ from tests.helpers.idiffir_fixture_builder import build_fixture
 
 def _build_graph(name: str, start: int) -> SpliceGraph:
     graph = SpliceGraph(name, "chr1", "+")
-    graph.addNode(f"{name}_left", start, start + 20)
-    graph.addNode(f"{name}_right", start + 40, start + 60)
-    graph.addEdge(f"{name}_left", f"{name}_right")
+    graph.add_node(f"{name}_left", start, start + 20)
+    graph.add_node(f"{name}_right", start + 40, start + 60)
+    graph.add_edge(f"{name}_left", f"{name}_right")
     return graph
 
 
 def _load_single_graph(path: Path) -> SpliceGraph:
     parser = SpliceGraphParser(str(path))
-    assert len(parser.graphDict) == 1
-    return next(iter(parser.graphDict.values()))
+    assert len(parser.graph_dict) == 1
+    return next(iter(parser.graph_dict.values()))
 
 
 def test_happy_path_load_and_write_cycle(tmp_path: Path) -> None:
@@ -36,7 +36,7 @@ def test_happy_path_load_and_write_cycle(tmp_path: Path) -> None:
     assert write_splice_graph_gff(graph, str(graph_path)) is True
 
     loaded = _load_single_graph(graph_path)
-    assert loaded.getName() == "left"
-    assert set(loaded.nodeDict) == {"left_left", "left_right"}
-    assert [node.id for node in loaded.getRoots()] == ["left_left"]
-    assert [node.id for node in loaded.getLeaves()] == ["left_right"]
+    assert loaded.get_name() == "left"
+    assert set(loaded.node_dict) == {"left_left", "left_right"}
+    assert [node.id for node in loaded.get_roots()] == ["left_left"]
+    assert [node.id for node in loaded.get_leaves()] == ["left_right"]

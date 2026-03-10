@@ -33,7 +33,7 @@ def _gff_line_for_node(
     attr_parts = [f"ID={node.id}"]
     if parents:
         attr_parts.append(f"Parent={','.join(parents)}")
-    node_attrs = node.attributeString()
+    node_attrs = node.attribute_string()
     if node_attrs:
         attr_parts.append(node_attrs)
     attrs_str = ";".join(attr_parts)
@@ -53,11 +53,11 @@ def write_splice_graph_gff(
     if reason:
         if halt_on_error:
             raise ValueError(
-                f'Cannot write invalid splice graph {graph.getName()} to file:\n"{reason}"\n'
+                f'Cannot write invalid splice graph {graph.get_name()} to file:\n"{reason}"\n'
             )
         LOGGER.warning(
             "writing_invalid_splice_graph",
-            graph_name=graph.getName(),
+            graph_name=graph.get_name(),
             reason=reason,
         )
 
