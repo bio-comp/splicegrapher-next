@@ -8,7 +8,12 @@ from SpliceGrapher.formats.parsers import load_gene_model_records
 
 parser_boundary = importlib.import_module("SpliceGrapher.formats.parsers.gene_model_gff")
 parser_context = importlib.import_module("SpliceGrapher.formats.parsers.gene_model_gff_context")
-parser_handlers = importlib.import_module("SpliceGrapher.formats.parsers.gene_model_gff_handlers")
+parser_record_handlers = importlib.import_module(
+    "SpliceGrapher.formats.parsers.gene_model_gff_record_handlers"
+)
+parser_resolution = importlib.import_module(
+    "SpliceGrapher.formats.parsers.gene_model_gff_resolution"
+)
 parser_records = importlib.import_module("SpliceGrapher.formats.parsers.gene_model_gff_records")
 
 
@@ -21,9 +26,9 @@ def test_candidate_cache_uses_bounded_clear_policy() -> None:
         parent_candidate_max_entries=2,
     )
 
-    parser_handlers.candidate_parent_ids(ctx, "GENE1.1")
-    parser_handlers.candidate_parent_ids(ctx, "GENE2.1")
-    parser_handlers.candidate_parent_ids(ctx, "GENE3.1")
+    parser_resolution.candidate_parent_ids(ctx, "GENE1.1")
+    parser_resolution.candidate_parent_ids(ctx, "GENE2.1")
+    parser_resolution.candidate_parent_ids(ctx, "GENE3.1")
 
     assert len(ctx.parent_candidates) <= 2
     assert ctx.stats.parent_candidate_clear_count == 1
@@ -45,8 +50,8 @@ def test_parent_cache_uses_bounded_clear_policy() -> None:
         parent_cache_max_entries=1,
     )
 
-    assert parser_handlers.resolve_parent(ctx, "GENE1", "chr1") is gene_one
-    assert parser_handlers.resolve_parent(ctx, "GENE2", "chr1") is gene_two
+    assert parser_resolution.resolve_parent(ctx, "GENE1", "chr1") is gene_one
+    assert parser_resolution.resolve_parent(ctx, "GENE2", "chr1") is gene_two
 
     assert len(ctx.parent_cache) == 1
     assert ctx.stats.parent_cache_clear_count == 1
@@ -58,7 +63,8 @@ def test_parser_modules_depend_on_models_module_not_gene_model_facade() -> None:
             inspect.getsource(parser_boundary),
             inspect.getsource(parser_context),
             inspect.getsource(parser_records),
-            inspect.getsource(parser_handlers),
+            inspect.getsource(parser_resolution),
+            inspect.getsource(parser_record_handlers),
         ]
     )
 
