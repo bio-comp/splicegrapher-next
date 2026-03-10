@@ -8,7 +8,7 @@ import structlog
 
 import SpliceGrapher.formats.models as model_domain
 from SpliceGrapher.formats.parsers.gene_model_gff_context import GeneModelLike, ParseContext
-from SpliceGrapher.formats.parsers.gene_model_gff_handlers import (
+from SpliceGrapher.formats.parsers.gene_model_gff_record_handlers import (
     RECORD_HANDLERS,
     handle_misc_feature_record,
 )
