@@ -1,13 +1,8 @@
-"""Compatibility aggregation surface for gene-model domain modules.
-
-This module remains import-stable while the implementation lives in smaller
-responsibility-based modules.
-"""
+"""Compatibility aggregation surface for gene-model modules."""
 
 from __future__ import annotations
 
-from .domain import (
-    CDS,
+from .constants import (
     CDS_TYPES,
     FORM_DELIMITERS,
     GFF_ID,
@@ -35,19 +30,22 @@ from .domain import (
     AttrMap,
     AttrT,
     AttrValue,
+    ExtraAttrMap,
+    GffRecordSource,
+)
+from .features import (
+    CDS,
     BaseFeature,
     Exon,
-    ExtraAttrMap,
     FpUtr,
-    Gene,
-    GeneFilter,
-    GffRecordSource,
-    Locus,
-    PseudoGene,
     TpUtr,
-    Transcript,
     TranscriptRegion,
     cds_factory,
+)
+from .gene import (
+    Gene,
+    GeneFilter,
+    PseudoGene,
     default_gene_filter,
     gene_type_filter,
 )
@@ -62,6 +60,8 @@ from .index import (
     gene_sort_key,
     gtf_feature_sort_key,
 )
+from .locus import Locus
+from .transcript import Transcript
 
 __all__ = [
     "AttrMap",
