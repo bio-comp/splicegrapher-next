@@ -1,4 +1,4 @@
-"""Process and command execution helpers extracted from shared.utils."""
+"""Process and command execution helpers."""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ import os
 import shlex
 import subprocess
 import sys
-from collections.abc import Iterator, Sequence
+from collections.abc import Iterator, Mapping, Sequence
 from typing import BinaryIO, TextIO, TypeVar, cast
 
 from SpliceGrapher.shared.format_utils import time_string
@@ -18,28 +18,24 @@ SubprocessStream = int | TextIO | BinaryIO | None
 CompletedProcessResult = subprocess.CompletedProcess[str] | subprocess.CompletedProcess[bytes]
 
 
-def getAttribute(key: str, default: AttrT, **args: object) -> AttrT:
-    """Returns the value for the given key in the arguments dict, if found;
-    otherwise returns default value."""
-    return default if key not in args else cast(AttrT, args[key])
+def get_attribute(mapping: Mapping[str, object], key: str, default: AttrT) -> AttrT:
+    """Return ``mapping[key]`` when present, else ``default``."""
+    return cast(AttrT, mapping[key]) if key in mapping else default
 
 
-def idFactory(pfx: str = "", initial: int = 1) -> Iterator[str]:
-    """Generates unique ids using the given prefix.  For example,
-    idFactory('ev_') will generate 'ev_1', 'ev_2', ..."""
-    prefix = pfx if pfx else ""
+def id_factory(prefix: str = "", initial: int = 1) -> Iterator[str]:
+    """Generate unique ids using the given prefix."""
     counter = initial
     while True:
         yield f"{prefix}{counter}"
         counter += 1
 
 
-def logMessage(s: str, logstream: TextIO | None = None) -> None:
-    """Allows log messages to be output both to stderr and a log file."""
-    LOGGER.info("process_message", message=s.rstrip("\n"))
-    sys.stderr.write(s)
-    if logstream:
-        logstream.write(s)
+def log_message(message: str, logstream: TextIO | None = None) -> None:
+    """Emit a structured process message and optionally mirror it to a stream."""
+    LOGGER.info("process_message", message=message.rstrip("\n"))
+    if logstream is not None:
+        logstream.write(message)
 
 
 def run_command(
@@ -68,20 +64,19 @@ def run_command(
     )
 
 
-def runCommand(
-    s: str,
+def run_logged_command(
+    command: str,
     *,
     logstream: TextIO | None = None,
     debug: bool = False,
-    exitOnError: bool = True,
+    exit_on_error: bool = True,
     stderr: SubprocessStream = None,
     stdout: SubprocessStream = None,
 ) -> None:
-    """Announces a command runs it.."""
-    LOGGER.info("command_started", command=s, debug=debug)
-    message = "    " + time_string(f"{s}\n")
-    sys.stderr.write(message)
-    if logstream:
+    """Log and run a shell command with SGN defaults."""
+    LOGGER.info("command_started", command=command, debug=debug)
+    message = "    " + time_string(f"{command}\n")
+    if logstream is not None:
         logstream.write(message)
 
     retcode = 0
@@ -89,7 +84,7 @@ def runCommand(
         stderr_stream = stderr if stderr is not None else subprocess.DEVNULL
         stdout_stream = stdout if stdout is not None else subprocess.DEVNULL
         completed = run_command(
-            s,
+            command,
             shell=True,
             check=False,
             stderr=stderr_stream,
@@ -97,14 +92,25 @@ def runCommand(
         )
         retcode = completed.returncode
 
-    if exitOnError and retcode != 0:
-        LOGGER.error("command_failed", command=s, return_code=retcode)
+    if exit_on_error and retcode != 0:
+        LOGGER.error("command_failed", command=command, return_code=retcode)
         code_type = "signal" if retcode < 0 else "code"
-        raise RuntimeError(f"Error running command: returned {retcode} {code_type}\n{s}")
+        raise RuntimeError(f"Error running command: returned {retcode} {code_type}\n{command}")
 
 
-def writeStartupMessage() -> None:
-    """Standardized startup message for all scripts."""
-    base = os.path.basename(sys.argv[0])
-    LOGGER.info("startup", script=base)
-    sys.stderr.write(time_string(f"{base} Started\n"))
+def write_startup_message() -> None:
+    """Emit the standardized startup event for scripts."""
+    script_name = os.path.basename(sys.argv[0])
+    LOGGER.info("startup", script=script_name)
+
+
+__all__ = [
+    "CompletedProcessResult",
+    "SubprocessStream",
+    "get_attribute",
+    "id_factory",
+    "log_message",
+    "run_command",
+    "run_logged_command",
+    "write_startup_message",
+]
