@@ -34,6 +34,30 @@ def test_load_gene_models_writes_intron_cache(tmp_path: Path) -> None:
     assert {"GENE1", "GENE2"} == {row[3] for row in rows}
 
 
+def test_load_gene_models_writes_gffutils_cache_db(tmp_path: Path) -> None:
+    """Passing ``cache_dir`` should materialize the deterministic sqlite cache."""
+    fixture = build_fixture(tmp_path)
+    cache_dir = tmp_path / "db-cache"
+
+    model = load_gene_models(str(fixture.gff3), cache_dir=cache_dir)
+
+    assert model.get_all_genes()
+    db_files = sorted(cache_dir.glob("annotation_*.db"))
+    assert len(db_files) == 1
+
+
+def test_load_gene_models_rejects_unknown_keyword_argument(tmp_path: Path) -> None:
+    """The loader boundary should reject stray keyword arguments immediately."""
+    fixture = build_fixture(tmp_path)
+
+    try:
+        load_gene_models(str(fixture.gff3), nonsense=True)
+    except TypeError as exc:
+        assert "nonsense" in str(exc)
+    else:
+        raise AssertionError("Expected TypeError for unsupported keyword argument")
+
+
 def test_load_gene_models_normalizes_transcript_alias(tmp_path: Path) -> None:
     """`transcript` featuretype aliases should normalize to canonical mRNA."""
     gff_path = tmp_path / "alias.gff3"
