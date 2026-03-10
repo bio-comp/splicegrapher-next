@@ -1,4 +1,5 @@
 from pathlib import Path
+from typing import Callable, cast
 
 from SpliceGrapher.formats.annotation_io import load_gene_models
 from tests.helpers.idiffir_fixture_builder import build_fixture
@@ -49,9 +50,10 @@ def test_load_gene_models_writes_gffutils_cache_db(tmp_path: Path) -> None:
 def test_load_gene_models_rejects_unknown_keyword_argument(tmp_path: Path) -> None:
     """The loader boundary should reject stray keyword arguments immediately."""
     fixture = build_fixture(tmp_path)
+    call_loader = cast(Callable[..., object], load_gene_models)
 
     try:
-        load_gene_models(str(fixture.gff3), nonsense=True)
+        call_loader(str(fixture.gff3), nonsense=True)
     except TypeError as exc:
         assert "nonsense" in str(exc)
     else:

@@ -6,7 +6,7 @@ from collections import defaultdict
 from collections.abc import Iterator, Sequence
 from itertools import pairwise
 from pathlib import Path
-from typing import TypedDict, cast
+from typing import TypedDict
 
 import gffutils
 
@@ -25,13 +25,15 @@ from SpliceGrapher.formats.gene_model import (
     feature_sort_key,
 )
 
-GENE_FEATURE_TYPES = {RecordType.GENE, RecordType.PREDICTED_GENE, RecordType.PSEUDOGENE}
-TRANSCRIPT_FEATURE_TYPES = {RecordType.MRNA, RecordType.PSEUDOGENIC_TRANSCRIPT}
-CDS_FEATURE_TYPES = {
-    RecordType.CDS,
-    RecordType.FIVE_PRIME_UTR,
-    RecordType.THREE_PRIME_UTR,
-}
+GENE_FEATURE_TYPES = frozenset({RecordType.GENE, RecordType.PREDICTED_GENE, RecordType.PSEUDOGENE})
+TRANSCRIPT_FEATURE_TYPES = frozenset({RecordType.MRNA, RecordType.PSEUDOGENIC_TRANSCRIPT})
+CDS_FEATURE_TYPES = frozenset(
+    {
+        RecordType.CDS,
+        RecordType.FIVE_PRIME_UTR,
+        RecordType.THREE_PRIME_UTR,
+    }
+)
 
 # External annotation schema keys (GFF/GTF), centralized to avoid literal drift.
 TRANSCRIPT_ID_KEY = "transcript_id"
@@ -61,6 +63,9 @@ class GeneRecord(TypedDict):
     attrs: dict[str, str]
 
 
+#
+# Feature and attribute normalization helpers.
+#
 def _normalize_feature_type(raw_feature_type: str) -> RecordType | None:
     """Normalize raw feature type strings to canonical ``RecordType`` values."""
     normalized = raw_feature_type.strip().casefold()
@@ -101,6 +106,9 @@ def _stable_db_path(source_path: Path, cache_dir: Path | None) -> Path:
     return cache_dir / f"annotation_{digest}.db"
 
 
+#
+# gffutils database helpers.
+#
 def _create_db(path: Path, cache_dir: Path | None = None) -> gffutils.FeatureDB:
     """Build and return a fresh ``gffutils.FeatureDB`` from ``path``."""
     db_path = _stable_db_path(path, cache_dir)
@@ -138,6 +146,9 @@ def _transcript_gene_map(db: gffutils.FeatureDB) -> dict[str, str]:
     return mapping
 
 
+#
+# Gene-model assembly helpers.
+#
 def _extract_gene_records(db: gffutils.FeatureDB) -> dict[str, GeneRecord]:
     """Collect normalized gene metadata from gene-like annotation records."""
     records: dict[str, GeneRecord] = {}
@@ -393,6 +404,9 @@ def _iter_transcript_exons(gene: Gene) -> Iterator[tuple[str, list[Exon]]]:
             yield transcript.id, exons
 
 
+#
+# Intron cache output helpers.
+#
 def write_intron_cache(model: GeneModel, outdir: str | Path) -> Path:
     """Write a deterministic intron BED cache derived from model exon topology."""
     outdir_path = Path(outdir)
@@ -420,18 +434,25 @@ def write_intron_cache(model: GeneModel, outdir: str | Path) -> Path:
     return cache_path
 
 
-def load_gene_models(path: str, **args: object) -> GeneModel:
+#
+# Public annotation loading API.
+#
+def load_gene_models(
+    path: str | Path,
+    *,
+    outdir: str | Path | None = None,
+    cache_dir: str | Path | None = None,
+) -> GeneModel:
     """Load GTF/GFF annotations through gffutils and return a ``GeneModel``."""
     model_path = Path(path)
     if not model_path.exists():
-        raise ValueError(f"Gene model file not found: {path}")
+        raise ValueError(f"Gene model file not found: {model_path}")
 
-    cache_dir = cast(str | Path | None, args.get("cache_dir"))
-    db = _create_db(model_path, Path(cache_dir) if cache_dir else None)
+    cache_dir_path = Path(cache_dir) if cache_dir is not None else None
+    db = _create_db(model_path, cache_dir_path)
     model = _build_gene_model_from_db(db)
 
-    outdir = cast(str | Path | None, args.get("outdir"))
-    if outdir:
+    if outdir is not None:
         write_intron_cache(model, outdir)
 
     return model
