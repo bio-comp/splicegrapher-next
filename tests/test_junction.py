@@ -9,13 +9,13 @@ def test_junction_round_trips_via_depth_record_string() -> None:
     junction = SpliceJunction("chr1", 10, 20, (2, 3), "K", "+")
     junction.count = 7
 
-    parsed = parse_junction_record(junction.toString())
+    parsed = parse_junction_record(junction.to_string())
 
     assert parsed.chromosome == "chr1"
     assert parsed.minpos == 10
     assert parsed.maxpos == 20
     assert tuple(parsed.anchors) == (2, 3)
-    assert parsed.sjCode == "K"
+    assert parsed.sj_code == "K"
     assert parsed.count == 7
     assert parsed.strand == "+"
 

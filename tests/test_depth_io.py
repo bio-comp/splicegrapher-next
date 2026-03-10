@@ -15,7 +15,7 @@ def _junction_signature(junction: object) -> tuple[object, ...]:
         getattr(junction, "minpos"),
         getattr(junction, "maxpos"),
         tuple(getattr(junction, "anchors")),
-        getattr(junction, "sjCode"),
+        getattr(junction, "sj_code"),
         getattr(junction, "count"),
         getattr(junction, "strand"),
     )
@@ -66,7 +66,7 @@ def test_depth_io_read_depths_parses_junction_records(tmp_path: Path) -> None:
             [
                 "C\tchr1\t8",
                 "D\tchr1\t2:0,3:2,3:0",
-                junction.toString(),
+                junction.to_string(),
                 "",
             ]
         ),

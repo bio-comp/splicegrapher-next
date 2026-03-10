@@ -18,7 +18,7 @@ class SpliceJunction:
     start: int
     end: int
     anchors: list[int] | tuple[int, int]
-    sjCode: str
+    sj_code: str
     strand: str
     count: int = 1
     code: ShortReadCode = field(init=False, default=ShortReadCode.JUNCTION)
@@ -98,16 +98,16 @@ class SpliceJunction:
             return self.donval
         return self.start if strand == "+" else self.end
 
-    def minAnchor(self) -> int:  # noqa: N802 - preserve legacy API
+    def min_anchor(self) -> int:
         """Return the smaller of the two anchor values."""
         return min(self.anchors)
 
-    def toString(self) -> str:  # noqa: N802 - preserve legacy API
+    def to_string(self) -> str:
         """Return tab-delimited SGN depth representation."""
         return (
             f"{ShortReadCode.JUNCTION.value}\t{self.chromosome}\t{self.strand}\t"
             f"{self.start}\t{self.end}\t{self.anchors[0]}\t{self.anchors[1]}"
-            f"\t{self.sjCode}\t{self.count}"
+            f"\t{self.sj_code}\t{self.count}"
         )
 
     def update(self, other: SpliceJunction) -> None:
@@ -139,7 +139,7 @@ def parse_junction_record(record: str) -> SpliceJunction:
         start=int(p1),
         end=int(p2),
         anchors=[int(a1), int(a2)],
-        sjCode=sj_code,
+        sj_code=sj_code,
         strand=strand,
         count=int(count),
     )

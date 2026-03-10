@@ -543,7 +543,7 @@ def _collect_pysam_data(
     normalized_junctions: JunctionMap = {}
     if junctions:
         for (chrom, _strand, _anchor, _acceptor), jct in sorted(junction_tmp.items()):
-            if jct.count >= minjct and jct.minAnchor() >= minanchor:
+            if jct.count >= minjct and jct.min_anchor() >= minanchor:
                 normalized_junctions.setdefault(chrom, []).append(jct)
 
     if alignments:
