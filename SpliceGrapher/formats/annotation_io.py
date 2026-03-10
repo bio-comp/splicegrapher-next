@@ -4,6 +4,7 @@ import hashlib
 import tempfile
 from collections import defaultdict
 from collections.abc import Iterator, Sequence
+from dataclasses import dataclass
 from itertools import pairwise
 from pathlib import Path
 from typing import TypedDict
@@ -61,6 +62,27 @@ class GeneRecord(TypedDict):
     minpos: int
     maxpos: int
     attrs: dict[str, str]
+
+
+@dataclass(slots=True)
+class TranscriptFeatureGroups:
+    transcript_gene: dict[str, str]
+    exon_groups: dict[str, list[gffutils.Feature]]
+    cds_groups: dict[str, list[gffutils.Feature]]
+    chrom_max: dict[str, int]
+    transcript_meta: dict[str, tuple[str, str]]
+
+
+@dataclass(slots=True)
+class TranscriptAssemblyContext:
+    transcript_id: str
+    exons: list[gffutils.Feature]
+    cds_records: list[gffutils.Feature]
+    chrom: str
+    strand: str
+    minpos: int
+    maxpos: int
+    gene_id: str
 
 
 #
@@ -149,6 +171,63 @@ def _transcript_gene_map(db: gffutils.FeatureDB) -> dict[str, str]:
 #
 # Gene-model assembly helpers.
 #
+def _collect_transcript_feature_groups(db: gffutils.FeatureDB) -> TranscriptFeatureGroups:
+    """Collect exon/CDS/transcript features keyed by transcript identifier."""
+    transcript_gene = _transcript_gene_map(db)
+    exon_groups: dict[str, list[gffutils.Feature]] = defaultdict(list)
+    cds_groups: dict[str, list[gffutils.Feature]] = defaultdict(list)
+    chrom_max: dict[str, int] = {}
+    transcript_meta: dict[str, tuple[str, str]] = {}
+
+    for feature in db.all_features(order_by=("seqid", "start", "end")):
+        chrom = feature.seqid.lower()
+        chrom_max[chrom] = max(chrom_max.get(chrom, 0), feature.end)
+        strand = feature.strand if feature.strand in {"+", "-", "."} else "."
+        feature_type = _normalize_feature_type(feature.featuretype)
+
+        if feature_type in TRANSCRIPT_FEATURE_TYPES:
+            transcript_id = _first_attr(feature, TRANSCRIPT_ID_KEYS) or feature.id
+            if transcript_id:
+                transcript_meta[transcript_id] = (chrom, strand)
+                maybe_gene = _first_attr(feature, GENE_REFERENCE_KEYS)
+                parents = feature.attributes.get(AttrKey.PARENT)
+                if parents:
+                    transcript_gene.setdefault(transcript_id, parents[0])
+                elif maybe_gene:
+                    transcript_gene.setdefault(transcript_id, maybe_gene)
+
+        if feature_type == RecordType.EXON:
+            transcript_id = _first_attr(feature, TRANSCRIPT_OR_PARENT_KEYS)
+            if transcript_id is None:
+                continue
+            exon_groups[transcript_id].append(feature)
+            transcript_meta.setdefault(transcript_id, (chrom, strand))
+            maybe_gene = _first_attr(feature, GENE_REFERENCE_KEYS)
+            parents = feature.attributes.get(AttrKey.PARENT)
+            if maybe_gene:
+                transcript_gene.setdefault(transcript_id, maybe_gene)
+            elif parents and transcript_id not in transcript_gene:
+                transcript_gene[transcript_id] = parents[0]
+
+        if feature_type in CDS_FEATURE_TYPES:
+            transcript_id = _first_attr(feature, TRANSCRIPT_OR_PARENT_KEYS)
+            if transcript_id is None:
+                continue
+            cds_groups[transcript_id].append(feature)
+            transcript_meta.setdefault(transcript_id, (chrom, strand))
+            maybe_gene = _first_attr(feature, GENE_REFERENCE_KEYS)
+            if maybe_gene:
+                transcript_gene.setdefault(transcript_id, maybe_gene)
+
+    return TranscriptFeatureGroups(
+        transcript_gene=transcript_gene,
+        exon_groups=exon_groups,
+        cds_groups=cds_groups,
+        chrom_max=chrom_max,
+        transcript_meta=transcript_meta,
+    )
+
+
 def _extract_gene_records(db: gffutils.FeatureDB) -> dict[str, GeneRecord]:
     """Collect normalized gene metadata from gene-like annotation records."""
     records: dict[str, GeneRecord] = {}
@@ -231,162 +310,147 @@ def _get_or_create_gene(
     return gene
 
 
+def _resolve_transcript_context(
+    groups: TranscriptFeatureGroups,
+    transcript_id: str,
+) -> TranscriptAssemblyContext | None:
+    """Resolve normalized assembly state for one transcript identifier."""
+    exons = sorted(groups.exon_groups.get(transcript_id, []), key=lambda f: (f.start, f.end))
+    cds_records = sorted(groups.cds_groups.get(transcript_id, []), key=lambda f: (f.start, f.end))
+    if not exons and not cds_records:
+        return None
+
+    chrom, strand = groups.transcript_meta.get(transcript_id, (None, None))
+    if chrom is None and exons:
+        chrom = exons[0].seqid.lower()
+    if strand is None and exons:
+        strand = exons[0].strand if exons[0].strand in {"+", "-", "."} else "."
+    if chrom is None:
+        return None
+    if strand is None:
+        strand = "."
+
+    starts = [feature.start for feature in exons] + [feature.start for feature in cds_records]
+    ends = [feature.end for feature in exons] + [feature.end for feature in cds_records]
+    minpos = min(starts)
+    maxpos = max(ends)
+
+    raw_gene_id = groups.transcript_gene.get(transcript_id)
+    if raw_gene_id is None:
+        raw_gene_id = _first_attr(exons[0], GENE_REFERENCE_KEYS) if exons else None
+    if raw_gene_id is None:
+        raw_gene_id = f"gene_{transcript_id}"
+
+    return TranscriptAssemblyContext(
+        transcript_id=transcript_id,
+        exons=exons,
+        cds_records=cds_records,
+        chrom=chrom,
+        strand=strand,
+        minpos=minpos,
+        maxpos=maxpos,
+        gene_id=raw_gene_id.upper(),
+    )
+
+
+def _build_transcript_attrs(gene_id: str, transcript_id: str) -> dict[str, str]:
+    """Build normalized transcript parent/identity attributes."""
+    return {
+        str(AttrKey.PARENT): gene_id,
+        str(AttrKey.NAME): transcript_id,
+        str(AttrKey.ID): transcript_id,
+    }
+
+
+def _add_exon_isoform(gene: Gene, context: TranscriptAssemblyContext) -> None:
+    """Attach exon-backed isoform records for one transcript context."""
+    isoform = Transcript(
+        context.transcript_id,
+        context.minpos,
+        context.maxpos,
+        context.chrom,
+        context.strand,
+        attr=_build_transcript_attrs(gene.id, context.transcript_id),
+        feature_type=ISOFORM_TYPE,
+    )
+    for exon_feature in context.exons:
+        exon = Exon(
+            exon_feature.start,
+            exon_feature.end,
+            context.chrom,
+            context.strand,
+            _feature_attr_map(exon_feature),
+        )
+        gene.add_exon(isoform, exon)
+
+
+def _build_cds_region(
+    feature: gffutils.Feature,
+    chrom: str,
+    strand: str,
+) -> TranscriptRegion | None:
+    """Build one CDS or UTR transcript region from a gffutils feature."""
+    feature_type = _normalize_feature_type(feature.featuretype)
+    attrs = _feature_attr_map(feature)
+    if feature_type == RecordType.CDS:
+        return CDS(feature.start, feature.end, chrom, strand, attrs)
+    if feature_type == RecordType.FIVE_PRIME_UTR:
+        return FpUtr(feature.start, feature.end, chrom, strand, attrs)
+    if feature_type == RecordType.THREE_PRIME_UTR:
+        return TpUtr(feature.start, feature.end, chrom, strand, attrs)
+    return None
+
+
+def _add_cds_transcript(gene: Gene, context: TranscriptAssemblyContext) -> None:
+    """Attach CDS/UTR-backed transcript records for one transcript context."""
+    if not context.cds_records:
+        return
+
+    transcript = Transcript(
+        context.transcript_id,
+        context.minpos,
+        context.maxpos,
+        context.chrom,
+        context.strand,
+        attr=_build_transcript_attrs(gene.id, context.transcript_id),
+        feature_type=RecordType.MRNA,
+    )
+    for cds_feature in context.cds_records:
+        cds_region = _build_cds_region(cds_feature, context.chrom, context.strand)
+        if cds_region is not None:
+            gene.add_cds(transcript, cds_region)
+
+
 def _build_gene_model_from_db(db: gffutils.FeatureDB) -> GeneModel:
     """Convert a gffutils feature database into a legacy ``GeneModel`` object."""
     model = GeneModel()
-    transcript_gene = _transcript_gene_map(db)
     gene_records = _extract_gene_records(db)
+    feature_groups = _collect_transcript_feature_groups(db)
 
-    exon_groups: dict[str, list[gffutils.Feature]] = defaultdict(list)
-    cds_groups: dict[str, list[gffutils.Feature]] = defaultdict(list)
-    chrom_max: dict[str, int] = {}
-    transcript_meta: dict[str, tuple[str, str]] = {}
-
-    for feature in db.all_features(order_by=("seqid", "start", "end")):
-        chrom = feature.seqid.lower()
-        chrom_max[chrom] = max(chrom_max.get(chrom, 0), feature.end)
-        strand = feature.strand if feature.strand in {"+", "-", "."} else "."
-        feature_type = _normalize_feature_type(feature.featuretype)
-
-        if feature_type in TRANSCRIPT_FEATURE_TYPES:
-            transcript_id = _first_attr(feature, TRANSCRIPT_ID_KEYS) or feature.id
-            if transcript_id:
-                transcript_meta[transcript_id] = (chrom, strand)
-                maybe_gene = _first_attr(feature, GENE_REFERENCE_KEYS)
-                parents = feature.attributes.get(AttrKey.PARENT)
-                if parents:
-                    transcript_gene.setdefault(transcript_id, parents[0])
-                elif maybe_gene:
-                    transcript_gene.setdefault(transcript_id, maybe_gene)
-
-        if feature_type == RecordType.EXON:
-            transcript_id = _first_attr(feature, TRANSCRIPT_OR_PARENT_KEYS)
-            if transcript_id is None:
-                continue
-            exon_groups[transcript_id].append(feature)
-            transcript_meta.setdefault(transcript_id, (chrom, strand))
-            maybe_gene = _first_attr(feature, GENE_REFERENCE_KEYS)
-            parents = feature.attributes.get(AttrKey.PARENT)
-            if maybe_gene:
-                transcript_gene.setdefault(transcript_id, maybe_gene)
-            elif parents and transcript_id not in transcript_gene:
-                transcript_gene[transcript_id] = parents[0]
-
-        if feature_type in CDS_FEATURE_TYPES:
-            transcript_id = _first_attr(feature, TRANSCRIPT_OR_PARENT_KEYS)
-            if transcript_id is None:
-                continue
-            cds_groups[transcript_id].append(feature)
-            transcript_meta.setdefault(transcript_id, (chrom, strand))
-            maybe_gene = _first_attr(feature, GENE_REFERENCE_KEYS)
-            if maybe_gene:
-                transcript_gene.setdefault(transcript_id, maybe_gene)
-
-    for chrom, maxpos in chrom_max.items():
+    for chrom, maxpos in feature_groups.chrom_max.items():
         model.add_chromosome(1, maxpos, chrom)
 
     all_transcripts = sorted(
-        set(exon_groups.keys()) | set(cds_groups.keys()) | set(transcript_meta.keys())
+        set(feature_groups.exon_groups)
+        | set(feature_groups.cds_groups)
+        | set(feature_groups.transcript_meta)
     )
     for transcript_id in all_transcripts:
-        exons = sorted(exon_groups.get(transcript_id, []), key=lambda f: (f.start, f.end))
-        cds_records = sorted(cds_groups.get(transcript_id, []), key=lambda f: (f.start, f.end))
-        if not exons and not cds_records:
+        context = _resolve_transcript_context(feature_groups, transcript_id)
+        if context is None:
             continue
 
-        chrom, strand = transcript_meta.get(transcript_id, (None, None))
-        if chrom is None and exons:
-            chrom = exons[0].seqid.lower()
-        if strand is None and exons:
-            strand = exons[0].strand if exons[0].strand in {"+", "-", "."} else "."
-        if chrom is None:
-            continue
-        if strand is None:
-            strand = "."
-
-        starts = [f.start for f in exons] + [f.start for f in cds_records]
-        ends = [f.end for f in exons] + [f.end for f in cds_records]
-        minpos = min(starts)
-        maxpos = max(ends)
-
-        raw_gene_id = transcript_gene.get(transcript_id)
-        if raw_gene_id is None:
-            raw_gene_id = _first_attr(exons[0], GENE_REFERENCE_KEYS) if exons else None
-        if raw_gene_id is None:
-            raw_gene_id = f"gene_{transcript_id}"
-        gene_id = raw_gene_id.upper()
-
-        gene = _get_or_create_gene(model, gene_records, gene_id, chrom, strand, minpos, maxpos)
-
-        iso_attr = {
-            str(AttrKey.PARENT): gene.id,
-            str(AttrKey.NAME): transcript_id,
-            str(AttrKey.ID): transcript_id,
-        }
-        isoform = Transcript(
-            transcript_id,
-            minpos,
-            maxpos,
-            chrom,
-            strand,
-            attr=iso_attr,
-            feature_type=ISOFORM_TYPE,
+        gene = _get_or_create_gene(
+            model,
+            gene_records,
+            context.gene_id,
+            context.chrom,
+            context.strand,
+            context.minpos,
+            context.maxpos,
         )
-        for exon_feature in exons:
-            exon = Exon(
-                exon_feature.start,
-                exon_feature.end,
-                chrom,
-                strand,
-                _feature_attr_map(exon_feature),
-            )
-            gene.add_exon(isoform, exon)
-
-        if cds_records:
-            mrna_attr = {
-                str(AttrKey.PARENT): gene.id,
-                str(AttrKey.NAME): transcript_id,
-                str(AttrKey.ID): transcript_id,
-            }
-            mrna_record = Transcript(
-                transcript_id,
-                minpos,
-                maxpos,
-                chrom,
-                strand,
-                attr=mrna_attr,
-                feature_type=RecordType.MRNA,
-            )
-            for cds_feature in cds_records:
-                feature_type = _normalize_feature_type(cds_feature.featuretype)
-                cds: TranscriptRegion
-                if feature_type == RecordType.CDS:
-                    cds = CDS(
-                        cds_feature.start,
-                        cds_feature.end,
-                        chrom,
-                        strand,
-                        _feature_attr_map(cds_feature),
-                    )
-                elif feature_type == RecordType.FIVE_PRIME_UTR:
-                    cds = FpUtr(
-                        cds_feature.start,
-                        cds_feature.end,
-                        chrom,
-                        strand,
-                        _feature_attr_map(cds_feature),
-                    )
-                elif feature_type == RecordType.THREE_PRIME_UTR:
-                    cds = TpUtr(
-                        cds_feature.start,
-                        cds_feature.end,
-                        chrom,
-                        strand,
-                        _feature_attr_map(cds_feature),
-                    )
-                else:
-                    continue
-                gene.add_cds(mrna_record, cds)
+        _add_exon_isoform(gene, context)
+        _add_cds_transcript(gene, context)
 
     model.make_sorted_model()
     return model
