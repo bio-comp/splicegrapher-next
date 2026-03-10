@@ -31,14 +31,14 @@ class SpliceGraphParser:
         self.instream = ez_open(fileRef) if isinstance(fileRef, str) else fileRef
         if self.instream is None:
             raise ValueError("No input file stream given.")
-        self.graphDict: dict[str, SpliceGraph] = {}
+        self.graph_dict: dict[str, SpliceGraph] = {}
         self.load_from_file()
 
     def __iter__(self) -> Iterator[SpliceGraph]:
-        return iter(self.graphDict.values())
+        return iter(self.graph_dict.values())
 
     def __len__(self) -> int:
-        return len(self.graphDict)
+        return len(self.graph_dict)
 
     def load_from_file(self) -> None:
         line_no = 0
@@ -78,14 +78,14 @@ class SpliceGraphParser:
                 if rec_type in VALID_GENES:
                     if graph is not None:
                         for parent_id, child_id in edges:
-                            graph.addEdge(alias[parent_id], alias[child_id])
+                            graph.add_edge(alias[parent_id], alias[child_id])
                     graph = SpliceGraph(name=node_id, chromosome=parts[0], strand=parts[6])
                     graph.minpos = min(start, end)
                     graph.maxpos = max(start, end)
                     for key, value in attrs.items():
                         if key not in KNOWN_ATTRS:
                             graph.attrs[key] = value
-                    self.graphDict[node_id] = graph
+                    self.graph_dict[node_id] = graph
                     alias = {}
                     edges = set()
                     continue
@@ -93,17 +93,17 @@ class SpliceGraphParser:
                 if graph is None:
                     raise ValueError(f"Graph feature found before graph header at line {line_no}")
 
-                node = graph.addNode(node_id, start, end)
+                node = graph.add_node(node_id, start, end)
                 alias[node_id] = node.id
                 for key, value in attrs.items():
                     if key == AS_KEY:
-                        node.addFormsFromString(value)
+                        node.add_forms_from_string(value)
                     elif key == ISO_KEY and value:
-                        node.addIsoformString(value)
+                        node.add_isoform_string(value)
                     elif key in {START_CODON_KEY, END_CODON_KEY} and value:
                         node.attrs[key] = {int(item) for item in value.split(",")}
                     elif key not in KNOWN_ATTRS:
-                        node.addAttribute(key, value)
+                        node.add_attribute(key, value)
 
                 if PARENT_ATTR in attrs:
                     for parent in attrs[PARENT_ATTR].split(","):
@@ -111,7 +111,7 @@ class SpliceGraphParser:
 
             if graph is not None:
                 for parent_id, child_id in edges:
-                    graph.addEdge(alias[parent_id], alias[child_id])
+                    graph.add_edge(alias[parent_id], alias[child_id])
         finally:
             indicator.finish()
 

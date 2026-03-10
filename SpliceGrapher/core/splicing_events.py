@@ -40,10 +40,10 @@ def _annotate_alt3_events(nodes: list[SpliceGraphNode], graph: SpliceGraph) -> N
         for other in overlap_index.overlaps(node, inclusive=False):
             if other == node or not intervals_overlap(node, other, inclusive=False):
                 continue
-            if node.acceptorEnd() == other.acceptorEnd():
+            if node.acceptor_end() == other.acceptor_end():
                 continue
-            node.addAltForm(AlternativeSplicingEvent.ALT3)
-            other.addAltForm(AlternativeSplicingEvent.ALT3)
+            node.add_alt_form(AlternativeSplicingEvent.ALT3)
+            other.add_alt_form(AlternativeSplicingEvent.ALT3)
 
 
 def _annotate_alt5_events(nodes: list[SpliceGraphNode], graph: SpliceGraph) -> None:
@@ -56,10 +56,10 @@ def _annotate_alt5_events(nodes: list[SpliceGraphNode], graph: SpliceGraph) -> N
         for other in overlap_index.overlaps(node, inclusive=False):
             if other == node or not intervals_overlap(node, other, inclusive=False):
                 continue
-            if node.donorEnd() == other.donorEnd():
+            if node.donor_end() == other.donor_end():
                 continue
-            node.addAltForm(AlternativeSplicingEvent.ALT5)
-            other.addAltForm(AlternativeSplicingEvent.ALT5)
+            node.add_alt_form(AlternativeSplicingEvent.ALT5)
+            other.add_alt_form(AlternativeSplicingEvent.ALT5)
 
 
 def _annotate_branching_events(graph: SpliceGraph, nodes: list[SpliceGraphNode]) -> None:
@@ -75,7 +75,7 @@ def _get_alt_site_event_groups(
 ) -> list[set[SpliceGraphNode]]:
     """Group overlapping ALT3 or ALT5 nodes using legacy containment exclusions."""
     event_nodes = sorted(
-        [node for node in nodes if event_type in node.altFormSet],
+        [node for node in nodes if event_type in node.alt_form_set],
         key=lambda node: (node.minpos, node.maxpos, node.id),
     )
     if not event_nodes:
@@ -133,39 +133,39 @@ def _upgrade_to_alt_both(graph: SpliceGraph, nodes: list[SpliceGraphNode]) -> No
     alt5_groups = _get_alt_site_event_groups(graph, nodes, AlternativeSplicingEvent.ALT5)
     for group in alt5_groups:
         for node in group:
-            node_acceptors = {child.acceptorEnd() for child in graph.successors(node)}
+            node_acceptors = {child.acceptor_end() for child in graph.successors(node)}
             other_acceptors = {
-                child.acceptorEnd()
+                child.acceptor_end()
                 for other in group
                 if other != node
                 for child in graph.successors(other)
             }
             if node_acceptors and not (node_acceptors & other_acceptors):
-                node.removeAltForm(AlternativeSplicingEvent.ALT5)
-                node.addAltForm(AlternativeSplicingEvent.ALTB5)
+                node.remove_alt_form(AlternativeSplicingEvent.ALT5)
+                node.add_alt_form(AlternativeSplicingEvent.ALTB5)
 
     alt3_groups = _get_alt_site_event_groups(graph, nodes, AlternativeSplicingEvent.ALT3)
     for group in alt3_groups:
         for node in group:
-            node_donors = {parent.donorEnd() for parent in graph.predecessors(node)}
+            node_donors = {parent.donor_end() for parent in graph.predecessors(node)}
             other_donors = {
-                parent.donorEnd()
+                parent.donor_end()
                 for other in group
                 if other != node
                 for parent in graph.predecessors(other)
             }
             if node_donors and not (node_donors & other_donors):
-                node.removeAltForm(AlternativeSplicingEvent.ALT3)
-                node.addAltForm(AlternativeSplicingEvent.ALTB3)
+                node.remove_alt_form(AlternativeSplicingEvent.ALT3)
+                node.add_alt_form(AlternativeSplicingEvent.ALTB3)
 
 
 def annotate_graph_events(graph: SpliceGraph) -> None:
     """Annotate motif-level ES/IR/ALT3/ALT5 events on a networkx-backed graph."""
-    nodes = graph.resolvedNodes()
+    nodes = graph.resolved_nodes()
     edge_bounds = _get_edge_bounds(graph)
 
     for node in nodes:
-        node.altFormSet.clear()
+        node.alt_form_set.clear()
         node.attrs.pop(AS_KEY, None)
 
     for node in nodes:
@@ -179,14 +179,14 @@ def annotate_graph_events(graph: SpliceGraph) -> None:
 
         if is_skipped:
             if not graph.predecessor_ids(node.id):
-                node.addAltForm(AlternativeSplicingEvent.ALTI)
+                node.add_alt_form(AlternativeSplicingEvent.ALTI)
             elif not graph.successor_ids(node.id):
-                node.addAltForm(AlternativeSplicingEvent.ALTT)
+                node.add_alt_form(AlternativeSplicingEvent.ALTT)
             else:
-                node.addAltForm(AlternativeSplicingEvent.ES)
+                node.add_alt_form(AlternativeSplicingEvent.ES)
 
         if is_retained:
-            node.addAltForm(AlternativeSplicingEvent.IR)
+            node.add_alt_form(AlternativeSplicingEvent.IR)
 
     _annotate_branching_events(graph, nodes)
     _upgrade_to_alt_both(graph, nodes)

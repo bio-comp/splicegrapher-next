@@ -16,12 +16,12 @@ def _build_linear_graph(
     with_tail: bool = False,
 ) -> SpliceGraph:
     graph = SpliceGraph(name, "chr1", "+")
-    graph.addNode(left_id, 10, 20)
-    graph.addNode(right_id, 30, 40)
-    graph.addEdge(left_id, right_id)
+    graph.add_node(left_id, 10, 20)
+    graph.add_node(right_id, 30, 40)
+    graph.add_edge(left_id, right_id)
     if with_tail:
-        graph.addNode(f"{name}_tail", 50, 60)
-        graph.addEdge(right_id, f"{name}_tail")
+        graph.add_node(f"{name}_tail", 50, 60)
+        graph.add_edge(right_id, f"{name}_tail")
     return graph
 
 

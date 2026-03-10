@@ -21,8 +21,8 @@ def _get_edge_coords(graph: SpliceGraph) -> set[EdgeCoords]:
 
 def jaccard_coefficients(graph_a: SpliceGraph, graph_b: SpliceGraph) -> tuple[float, float]:
     """Return Jaccard coefficients for resolved nodes and coordinate-based edges."""
-    nodes_a = set(graph_a.resolvedNodes())
-    nodes_b = set(graph_b.resolvedNodes())
+    nodes_a = set(graph_a.resolved_nodes())
+    nodes_b = set(graph_b.resolved_nodes())
     node_union = nodes_a | nodes_b
     node_coeff = (len(nodes_a & nodes_b) / len(node_union)) if node_union else 1.0
 
@@ -35,8 +35,8 @@ def jaccard_coefficients(graph_a: SpliceGraph, graph_b: SpliceGraph) -> tuple[fl
 
 def recall(graph_a: SpliceGraph, graph_b: SpliceGraph) -> tuple[float, float]:
     """Return recall values using ``graph_b`` as the denominator set."""
-    nodes_b = set(graph_b.resolvedNodes())
-    node_coeff = (len(set(graph_a.resolvedNodes()) & nodes_b) / len(nodes_b)) if nodes_b else 1.0
+    nodes_b = set(graph_b.resolved_nodes())
+    node_coeff = (len(set(graph_a.resolved_nodes()) & nodes_b) / len(nodes_b)) if nodes_b else 1.0
 
     edges_b = _get_edge_coords(graph_b)
     edge_coeff = (len(_get_edge_coords(graph_a) & edges_b) / len(edges_b)) if edges_b else 1.0
@@ -45,9 +45,9 @@ def recall(graph_a: SpliceGraph, graph_b: SpliceGraph) -> tuple[float, float]:
 
 def equivalent_graphs(graph_a: SpliceGraph, graph_b: SpliceGraph) -> bool:
     """Return ``True`` when two graphs have identical node/edge coordinate sets."""
-    if len(graph_a.nodeDict) != len(graph_b.nodeDict):
+    if len(graph_a.node_dict) != len(graph_b.node_dict):
         return False
-    return set(graph_a.nodeDict.values()) == set(graph_b.nodeDict.values()) and _get_edge_coords(
+    return set(graph_a.node_dict.values()) == set(graph_b.node_dict.values()) and _get_edge_coords(
         graph_a
     ) == _get_edge_coords(graph_b)
 
