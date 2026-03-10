@@ -25,12 +25,12 @@ def test_import_splice_graph_parser_module() -> None:
 
 def test_import_shared_modules_without_utils_shim() -> None:
     file_utils_module = importlib.import_module("SpliceGrapher.shared.file_utils")
-    process_utils_module = importlib.import_module("SpliceGrapher.shared.process_utils")
+    process_module = importlib.import_module("SpliceGrapher.shared.process")
     progress_module = importlib.import_module("SpliceGrapher.shared.progress")
     config_module = importlib.import_module("SpliceGrapher.shared.config")
 
     assert hasattr(file_utils_module, "ez_open")
-    assert hasattr(process_utils_module, "runCommand")
+    assert hasattr(process_module, "run_logged_command")
     assert hasattr(progress_module, "ProgressIndicator")
     assert hasattr(config_module, "load_config")
 
