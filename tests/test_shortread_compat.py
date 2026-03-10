@@ -6,10 +6,10 @@ from pathlib import Path
 
 
 def test_alignment_io_imports_modern_depth_and_junction_boundaries() -> None:
-    alignment_io_path = (
-        Path(__file__).resolve().parents[1] / "SpliceGrapher" / "formats" / "alignment_io.py"
+    package_dir = Path(__file__).resolve().parents[1] / "SpliceGrapher" / "formats" / "alignment_io"
+    source = "\n".join(
+        path.read_text(encoding="utf-8") for path in sorted(package_dir.glob("*.py"))
     )
-    source = alignment_io_path.read_text(encoding="utf-8")
 
     assert "from SpliceGrapher.shared.ShortRead import" not in source
     assert "from SpliceGrapher.formats.shortread_compat import" not in source
