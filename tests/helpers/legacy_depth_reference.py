@@ -9,7 +9,6 @@ import pysam
 # 1) #36 merged; 2) CI green for two consecutive weeks (or one stable patch cycle);
 # 3) fixture-based golden outputs replace code-based legacy oracle checks.
 
-
 MATCH = 0
 INSERT = 1
 DELETE = 2
@@ -19,12 +18,12 @@ GAP = 3
 def _open_alignment(path: Path, reference_fasta: Path | None = None) -> pysam.AlignmentFile:
     suffix = path.suffix.lower()
     if suffix == ".sam":
-        return pysam.AlignmentFile(path, "r")
+        return pysam.AlignmentFile(str(path), "r")
     if suffix == ".cram":
         if reference_fasta:
-            return pysam.AlignmentFile(path, "rc", reference_filename=str(reference_fasta))
-        return pysam.AlignmentFile(path, "rc")
-    return pysam.AlignmentFile(path, "rb")
+            return pysam.AlignmentFile(str(path), "rc", reference_filename=str(reference_fasta))
+        return pysam.AlignmentFile(str(path), "rc")
+    return pysam.AlignmentFile(str(path), "rb")
 
 
 def _legacy_process_read(
@@ -33,8 +32,8 @@ def _legacy_process_read(
     junctions: defaultdict[tuple[int, int], int],
     min_idx: int,
 ) -> None:
-    pos = read.pos
-    for op, length in read.cigar:
+    pos = read.reference_start
+    for op, length in read.cigartuples or []:
         if op == MATCH:
             start = max(0, pos - min_idx)
             end = min(len(depths), max(0, (pos + length) - min_idx))
@@ -44,7 +43,6 @@ def _legacy_process_read(
         elif op == INSERT:
             continue
         elif op == DELETE:
-            # alignment_io does not increment depths across deletion spans.
             pos += length
         elif op == GAP:
             junctions[(pos - min_idx, (pos + length) - min_idx)] += 1

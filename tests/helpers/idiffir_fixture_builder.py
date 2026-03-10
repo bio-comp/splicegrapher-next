@@ -49,7 +49,7 @@ def _segment(
     seg.reference_id = 0
     seg.reference_start = start
     seg.mapping_quality = 60
-    seg.cigar = cigar
+    seg.cigartuples = list(cigar)
     seg.next_reference_id = -1
     seg.next_reference_start = -1
     seg.template_length = 0
@@ -81,7 +81,7 @@ def _write_bam(
     _add_gene_reads(reads, 420, 530, 620, *gene2_counts)
     reads.sort(key=lambda record: record[0])
 
-    with pysam.AlignmentFile(path, "wb", header=header) as out:
+    with pysam.AlignmentFile(str(path), "wb", header=header) as out:
         for idx, (start, cigar, query_len) in enumerate(reads):
             out.write(_segment(f"r{idx}", start, cigar, query_len))
     pysam.index(str(path))
