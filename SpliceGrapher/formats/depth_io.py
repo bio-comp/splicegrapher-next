@@ -28,7 +28,7 @@ class JunctionRecord(Protocol):
     @property
     def minpos(self) -> int: ...
 
-    def minAnchor(self) -> int: ...  # noqa: N802
+    def min_anchor(self) -> int: ...
 
 
 TJunction = TypeVar("TJunction", bound=JunctionRecord)
@@ -146,7 +146,7 @@ def read_depths(
             if junctions:
                 assert parse_junction is not None
                 junction = parse_junction(text_line.strip())
-                if junction.count >= minjct and junction.minAnchor() >= minanchor:
+                if junction.count >= minjct and junction.min_anchor() >= minanchor:
                     chromosome_limit = chromosome_limits.get(chrom, maxpos)
                     if junction.minpos <= chromosome_limit:
                         junction_map.setdefault(chrom, []).append(junction)
