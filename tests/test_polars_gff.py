@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import get_type_hints
 
 import pytest
 
@@ -116,6 +117,18 @@ def test_iter_flattened_features_emits_gene_transcript_and_child_rows() -> None:
     feature_types = {str(row["feature_type"]) for row in rows}
     assert {"GENE", "MRNA", "EXON", "CDS"}.issubset(feature_types)
     assert all(row["gene_id"] == "GENE1" for row in rows)
+
+
+def test_runtime_helper_signatures_do_not_use_object() -> None:
+    record_type_hints = get_type_hints(polars_gff._record_type_name, globalns=vars(polars_gff))
+    feature_coordinate_hints = get_type_hints(
+        polars_gff._feature_coordinates, globalns=vars(polars_gff)
+    )
+    transcript_hints = get_type_hints(polars_gff._iter_gene_transcripts, globalns=vars(polars_gff))
+
+    assert record_type_hints["value"] is not object
+    assert feature_coordinate_hints["feature"] is not object
+    assert transcript_hints["gene"] is not object
 
 
 def test_extract_to_dataframe_raises_without_polars(monkeypatch) -> None:
