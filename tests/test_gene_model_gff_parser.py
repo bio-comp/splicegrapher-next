@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib
 import inspect
+from typing import get_type_hints
 
 from SpliceGrapher.formats import gene_model as gm
 from SpliceGrapher.formats.parsers import load_gene_model_records
@@ -71,3 +72,22 @@ def test_parser_modules_depend_on_models_module_not_gene_model_facade() -> None:
     assert callable(load_gene_model_records)
     assert "import SpliceGrapher.formats.models as model_domain" in source
     assert "import SpliceGrapher.formats.gene_model as gm" not in source
+
+
+def test_parser_helper_signatures_do_not_use_object_runtime_inputs() -> None:
+    annotation_hints = get_type_hints(
+        parser_records.annotation_value,
+        globalns=vars(parser_records),
+    )
+    known_hints = get_type_hints(
+        parser_resolution.known_chromosomes,
+        globalns=vars(parser_resolution),
+    )
+    has_chrom_hints = get_type_hints(
+        parser_resolution.has_chromosome,
+        globalns=vars(parser_resolution),
+    )
+
+    assert annotation_hints["key"] is not object
+    assert "object" not in str(known_hints["mapping"])
+    assert "object" not in str(has_chrom_hints["mapping"])

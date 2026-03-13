@@ -29,8 +29,8 @@ class ParsedRecord:
     strand: str
 
 
-def annotation_value(annots: Mapping[str, str], key: object) -> str | None:
-    return annots.get(str(key))
+def annotation_value(annots: Mapping[str, str], key: str) -> str | None:
+    return annots.get(key)
 
 
 def normalize_chromosomes(chromosomes: Sequence[str] | str | None) -> set[str] | None:
