@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Container, Mapping
 
 import SpliceGrapher.formats.models as model_domain
 from SpliceGrapher.formats.parsers.gene_model_gff_context import ParseContext
@@ -17,14 +17,14 @@ def _subnames(full_string: str, delimiter: str) -> list[str]:
     return [delimiter.join(parts[:i]) for i in range(len(parts) - 1, 0, -1)]
 
 
-def known_chromosomes(mapping: Mapping[str, object]) -> str:
+def known_chromosomes(mapping: Mapping[str, Mapping[str, model_domain.Gene]]) -> str:
     return ",".join(mapping.keys())
 
 
 def has_chromosome(
     ctx: ParseContext,
     record: ParsedRecord,
-    mapping: Mapping[str, object],
+    mapping: Container[str],
     *,
     fail_message: str | None = None,
 ) -> bool:
