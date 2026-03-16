@@ -5,7 +5,7 @@ from SpliceGrapher.core.graph_math import (
     jaccard_coefficients,
     recall,
 )
-from SpliceGrapher.core.splice_graph import SpliceGraph
+from SpliceGrapher.core.splice_graph.graph import SpliceGraph
 
 
 def _build_linear_graph(

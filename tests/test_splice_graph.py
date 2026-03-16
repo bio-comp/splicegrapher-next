@@ -11,7 +11,9 @@ from SpliceGrapher.core.enums import (
     AlternativeSplicingEventName,
     Strand,
 )
-from SpliceGrapher.core.splice_graph import GENE_REC, SpliceGraph, SpliceGraphNode
+from SpliceGrapher.core.splice_graph.constants import GENE_REC
+from SpliceGrapher.core.splice_graph.graph import SpliceGraph
+from SpliceGrapher.core.splice_graph.node import SpliceGraphNode
 from SpliceGrapher.formats.parsers.splice_graph import SpliceGraphParser
 from SpliceGrapher.formats.writers.splice_graph import write_splice_graph_gff
 
