@@ -7,7 +7,7 @@ from typing import TextIO
 
 from SpliceGrapher.core.enum_coercion import coerce_enum
 from SpliceGrapher.core.enums import RecordType
-from SpliceGrapher.core.splice_graph import (
+from SpliceGrapher.core.splice_graph.constants import (
     AS_KEY,
     END_CODON_KEY,
     ID_ATTR,
@@ -17,8 +17,8 @@ from SpliceGrapher.core.splice_graph import (
     START_CODON_KEY,
     VALID_GENES,
     VALID_RECTYPES,
-    SpliceGraph,
 )
+from SpliceGrapher.core.splice_graph.graph import SpliceGraph
 from SpliceGrapher.shared.file_utils import ez_open
 from SpliceGrapher.shared.progress import ProgressIndicator
 

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import importlib
 from pathlib import Path
 
 import networkx as nx
@@ -10,7 +11,9 @@ from SpliceGrapher.core.enums import (
     AlternativeSplicingEventName,
     Strand,
 )
-from SpliceGrapher.core.splice_graph import GENE_REC, SpliceGraph, SpliceGraphNode
+from SpliceGrapher.core.splice_graph.constants import GENE_REC
+from SpliceGrapher.core.splice_graph.graph import SpliceGraph
+from SpliceGrapher.core.splice_graph.node import SpliceGraphNode
 from SpliceGrapher.formats.parsers.splice_graph import SpliceGraphParser
 from SpliceGrapher.formats.writers.splice_graph import write_splice_graph_gff
 
@@ -26,6 +29,16 @@ def _load_single_graph(path: Path) -> SpliceGraph:
     parser = SpliceGraphParser(str(path))
     assert len(parser.graph_dict) == 1
     return next(iter(parser.graph_dict.values()))
+
+
+def test_splice_graph_core_package_modules_exist() -> None:
+    graph_module = importlib.import_module("SpliceGrapher.core.splice_graph.graph")
+    node_module = importlib.import_module("SpliceGrapher.core.splice_graph.node")
+    constants_module = importlib.import_module("SpliceGrapher.core.splice_graph.constants")
+
+    assert graph_module.SpliceGraph is SpliceGraph
+    assert node_module.SpliceGraphNode is SpliceGraphNode
+    assert constants_module.GENE_REC == GENE_REC
 
 
 def test_splice_graph_node_is_pure_data() -> None:

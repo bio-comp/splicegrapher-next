@@ -14,8 +14,15 @@ if str(PROJECT_ROOT) not in sys.path:
 
 
 def test_import_splice_graph_core_module() -> None:
-    module = importlib.import_module("SpliceGrapher.core.splice_graph")
-    assert hasattr(module, "SpliceGraph")
+    package = importlib.import_module("SpliceGrapher.core.splice_graph")
+    graph_module = importlib.import_module("SpliceGrapher.core.splice_graph.graph")
+    node_module = importlib.import_module("SpliceGrapher.core.splice_graph.node")
+    constants_module = importlib.import_module("SpliceGrapher.core.splice_graph.constants")
+
+    assert hasattr(package, "__all__")
+    assert hasattr(graph_module, "SpliceGraph")
+    assert hasattr(node_module, "SpliceGraphNode")
+    assert hasattr(constants_module, "GENE_REC")
 
 
 def test_import_splice_graph_parser_module() -> None:

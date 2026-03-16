@@ -72,36 +72,45 @@ def test_find_unexpected_executable_python_paths_flags_library_modules() -> None
     assert unexpected == ["SpliceGrapher/formats/fasta.py"]
 
 
+def test_guard_targets_splice_graph_package_modules() -> None:
+    module = _load_guard_module()
+
+    assert "SpliceGrapher/core/splice_graph/graph.py" in module.ENUM_CONTROL_FLOW_PATHS
+    assert "SpliceGrapher/core/splice_graph/graph.py" in module.OVERLAP_CONTROL_FLOW_PATHS
+    assert "SpliceGrapher/core/splice_graph.py" not in module.ENUM_CONTROL_FLOW_PATHS
+    assert "SpliceGrapher/core/splice_graph.py" not in module.OVERLAP_CONTROL_FLOW_PATHS
+
+
 def test_find_magic_string_control_flow_flags_literal_branching() -> None:
     module = _load_guard_module()
 
     sources = {
-        "SpliceGrapher/core/splice_graph.py": 'if rec_type == "gene":\n    pass\n',
+        "SpliceGrapher/core/splice_graph/graph.py": 'if rec_type == "gene":\n    pass\n',
     }
 
     violations = module.find_magic_string_control_flow(
         source_by_path=sources,
-        protected_paths=("SpliceGrapher/core/splice_graph.py",),
+        protected_paths=("SpliceGrapher/core/splice_graph/graph.py",),
     )
 
     assert violations
-    assert "SpliceGrapher/core/splice_graph.py:1" in violations[0]
+    assert "SpliceGrapher/core/splice_graph/graph.py:1" in violations[0]
 
 
 def test_find_manual_overlap_lines_detects_raw_coordinate_logic() -> None:
     module = _load_guard_module()
     sources = {
-        "SpliceGrapher/core/splice_graph.py": (
+        "SpliceGrapher/core/splice_graph/graph.py": (
             "if a.minpos < b.maxpos and a.maxpos > b.minpos:\n    pass\n"
         ),
     }
 
     found = module.find_manual_overlap_lines(
         source_by_path=sources,
-        protected_paths=("SpliceGrapher/core/splice_graph.py",),
+        protected_paths=("SpliceGrapher/core/splice_graph/graph.py",),
     )
 
-    assert found["SpliceGrapher/core/splice_graph.py"] == {
+    assert found["SpliceGrapher/core/splice_graph/graph.py"] == {
         "if a.minpos < b.maxpos and a.maxpos > b.minpos:"
     }
 

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from SpliceGrapher.core.enums import AlternativeSplicingEvent
-from SpliceGrapher.core.splice_graph import SpliceGraph
+from SpliceGrapher.core.splice_graph.graph import SpliceGraph
 from SpliceGrapher.core.splicing_events import annotate_graph_events
 
 

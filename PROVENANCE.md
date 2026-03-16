@@ -16,9 +16,11 @@ upstream/downstream integration work.
 Current tracked extraction baseline includes:
 
 - Identity/package artifacts: `SpliceGrapher/__init__.py`
-- Core/shared baseline: `SpliceGrapher/core/splice_graph.py`,
+- Core/shared baseline: `SpliceGrapher/core/splice_graph/*`,
   `SpliceGrapher/shared/*`
 - Parser baseline: `SpliceGrapher/formats/parsers/splice_graph.py`
+- Current splice-graph core layout: `constants.py`, `node.py`, and `graph.py`
+  under `SpliceGrapher/core/splice_graph/`
 - Formats slice A baseline: `SpliceGrapher/formats/*` (current extracted files)
 - Residual batch-0 identity completion: `SpliceGrapher/SpliceGrapher.cfg`
 

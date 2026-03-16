@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from SpliceGrapher.core.splice_graph import SpliceGraph
+from SpliceGrapher.core.splice_graph.graph import SpliceGraph
 from SpliceGrapher.formats.annotation_io import load_gene_models
 from SpliceGrapher.formats.parsers.splice_graph import SpliceGraphParser
 from SpliceGrapher.formats.writers.splice_graph import write_splice_graph_gff
