@@ -12,7 +12,6 @@ from SpliceGrapher.formats.writers.gene_model import write_gff as write_gene_mod
 from SpliceGrapher.formats.writers.gene_model import write_gtf as write_gene_model_gtf
 
 from .model import GeneModel
-from .repository import GeneModelRepository
 
 KNOWN_RECTYPES = _models.KNOWN_RECTYPES
 IGNORE_RECTYPES = _models.IGNORE_RECTYPES
@@ -92,7 +91,6 @@ __all__ = [
     "Gene",
     "GeneFilter",
     "GeneModel",
-    "GeneModelRepository",
     "GffRecordSource",
     "ID_FIELD",
     "IGNORE_RECTYPES",
