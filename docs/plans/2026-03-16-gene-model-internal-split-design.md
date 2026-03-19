@@ -1,95 +1,76 @@
-# GeneModel Internal Split Design
+# GeneModel Lean Cleanup Design
 
 ## Goal
 
-Reduce `SpliceGrapher/formats/gene_model/model.py` from a single container/query monolith into smaller internal modules, while keeping `SpliceGrapher.formats.gene_model.GeneModel` as the stable public type.
+Remove dead indirection from `SpliceGrapher/formats/gene_model` without adding new internal scaffolding.
 
-## Why This Slice
+## Re-Scope
 
-`SpliceGrapher/formats/gene_model/model.py` is still one of the largest remaining runtime modules in SGN. It currently mixes three distinct concerns:
-- container state and mutation (`add_gene`, `add_chromosome`)
-- query and lookup behavior (`get_gene`, `get_genes_in_range`, `isoform_dict`, donor/acceptor aggregation)
-- loading/index/serialization delegation (`from_gff`, `load_gene_model`, `make_sorted_model`, `write_gff`, `write_gtf`)
+The original plan for `#205` was to split `SpliceGrapher/formats/gene_model/model.py` into additional internal modules. That turned into unnecessary bloat:
+- new tiny files
+- mixin machinery
+- tests pinning internal layout instead of runtime behavior
 
-The package boundary for `SpliceGrapher.formats.gene_model` already exists, so this slice can remove structural pollution without another namespace migration.
+`model.py` on `main` is only about 420 lines. That is not the real problem.
 
-## Non-Goals
+The real smells are:
+- `SpliceGrapher/formats/gene_model/repository.py` as a pure pass-through shell
+- `GeneModel.load_gene_model(...)` as a dead wrapper around the parser entrypoint
 
-This slice does not:
-- change GeneModel semantics
-- change parser or writer behavior
-- rename public GeneModel methods
-- move domain entities out of `SpliceGrapher.formats.models`
-- add compatibility aliases beyond the current `SpliceGrapher.formats.gene_model` package surface
-
-## Target Shape
+## Actual Target Shape
 
 Keep:
 - `SpliceGrapher/formats/gene_model/model.py`
 - `SpliceGrapher/formats/gene_model/__init__.py`
+
+Delete:
 - `SpliceGrapher/formats/gene_model/repository.py`
+- `GeneModel.load_gene_model(...)`
+- `GeneModelRepository` package export
 
-Add:
-- `SpliceGrapher/formats/gene_model/queries.py`
-- `SpliceGrapher/formats/gene_model/loading.py`
+## Design Decisions
 
-## Responsibility Split
-
-### `model.py`
-Owns the `GeneModel` dataclass and core state only:
-- field definitions
-- minimal state mutation helpers (`add_gene`, `add_chromosome`, parent lookup helper)
-- thin delegators to query/loading helpers
-
-### `queries.py`
-Owns read/query logic over an existing `GeneModel` state:
-- all-gene and per-chromosome lookups
-- range and parent lookups
-- donor/acceptor aggregation
-- isoform dictionary generation
-- annotation parsing helpers if they remain query-adjacent
-
-### `loading.py`
-Owns model population and index maintenance helpers:
-- `from_gff` support path validation
-- `load_gene_model` delegation wrapper
+### Keep `model.py` whole
+`GeneModel` still owns:
+- container state
+- mutation helpers
+- query methods
+- `from_gff`
 - `make_sorted_model`
-- any small helpers tied directly to initialization/loading flow
+- writer delegation
 
-### `repository.py`
-Remains the boundary for loading and writing. This slice should not move repository behavior back into `model.py`.
+That keeps the runtime shape simple and avoids over-modularizing a file that is not yet too large.
 
-## Import Policy
+### Inline parser and writer calls
+Replace the repository shell with direct runtime calls:
+- `from_gff` calls `load_gene_model_records(...)` directly
+- `write_gff` calls `write_gene_model_gff(...)` directly
+- `write_gtf` calls `write_gene_model_gtf(...)` directly
 
-Be conservative at the package boundary and explicit internally:
-- `SpliceGrapher.formats.gene_model.GeneModel` stays where it is
-- `model.py` may import internal helper functions from `queries.py` and `loading.py`
-- tests that assert internal layout should import the concrete internal modules directly
-- external SGN code should continue to prefer `SpliceGrapher.formats.gene_model`
+### Remove dead wrapper surface
+`GeneModel.load_gene_model(...)` is not used by SGN runtime. Only tests were calling it.
 
-## Expected Blast Radius
+That means it should be deleted instead of preserved.
 
-Primary touch points:
-- `SpliceGrapher/formats/gene_model/model.py`
-- `SpliceGrapher/formats/gene_model/__init__.py`
-- new internal helper modules
-- `tests/test_gene_model.py`
-- `tests/test_gene_model_package_layout.py`
-- any tests that inspect method signatures or monkeypatch `GeneModel` methods
+## Non-Goals
+
+This slice does not:
+- split `model.py` further
+- change parser behavior
+- change writer behavior
+- rename the surviving public `GeneModel` query methods
 
 ## Testing Strategy
 
-This should be TDD and structural:
-- first pin the internal package layout and current public `GeneModel` boundary in tests
-- then extract one concern at a time behind the existing public class
-- run targeted `gene_model` tests first
-- then run full SGN quality gates
+Pin the lean contract:
+- `GeneModelRepository` is gone from the package
+- `GeneModel.load_gene_model(...)` is gone from the class
+- parser-loading tests call `load_gene_model_records(...)` directly
+- writer tests patch the direct writer call sites in `model.py`
 
 ## Verification
 
-Required gates after the split:
-- targeted `tests/test_gene_model.py`
-- targeted `tests/test_gene_model_package_layout.py`
+Required gates:
 - `uv run ruff check . --fix`
 - `uv run ruff format .`
 - `uv run mypy .`
@@ -98,8 +79,6 @@ Required gates after the split:
 
 ## Next Step After This Slice
 
-If this lands cleanly, the next cleanup candidate should shift to either:
-- `SpliceGrapher/formats/alignment_io/collect.py`, or
+After this lands, the next cleanup candidates remain:
+- `SpliceGrapher/formats/alignment_io/collect.py`
 - `SpliceGrapher/formats/parsers/gene_model_gff_record_handlers.py`
-
-Both are still large internal modules, but `GeneModel` is the cleaner structural win right now.
