@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import inspect
-from collections.abc import Sequence
 from pathlib import Path
 
 import pytest
@@ -385,11 +384,13 @@ def test_get_annotation_dict_ignores_malformed_tokens_and_splits_once() -> None:
 
 
 def test_load_gene_model_rejects_unknown_record_type() -> None:
+    from SpliceGrapher.formats.parsers import load_gene_model_records
+
     model = GeneModel()
     records = ["chr1\tsource\tunknown_type\t1\t10\t.\t+\t.\tID=U1;Name=U1"]
 
     with pytest.raises(ValueError):
-        model.load_gene_model(records)
+        load_gene_model_records(model, records)
 
 
 def test_gene_model_record_type_collections_are_enum_backed() -> None:
@@ -530,83 +531,23 @@ def test_basefeature_is_unhashable_because_coordinates_are_mutable() -> None:
         hash(left)
 
 
-def test_load_gene_model_delegates_to_parser_boundary(
+def test_gene_model_no_longer_exposes_load_gene_model_wrapper(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from SpliceGrapher.formats.parsers import gene_model_gff as parser_boundary
-
-    model = GeneModel()
-    records = ["chr1\tsrc\tgene\t1\t10\t.\t+\t.\tID=GENE1;Name=GENE1"]
-    calls: dict[str, object] = {}
-
-    def _fake_loader(
-        model_arg: GeneModel, gff_records_arg: gm.GffRecordSource, **kwargs: object
-    ) -> None:
-        calls["model"] = model_arg
-        calls["records"] = gff_records_arg
-        calls["kwargs"] = kwargs
-
-    monkeypatch.setattr(parser_boundary, "load_gene_model_records", _fake_loader)
-
-    model.load_gene_model(records, verbose=True)
-
-    assert calls["model"] is model
-    assert calls["records"] == records
-    assert calls["kwargs"] == {
-        "require_notes": False,
-        "chromosomes": None,
-        "verbose": True,
-        "ignore_errors": False,
-    }
+    _ = monkeypatch
+    assert not hasattr(GeneModel, "load_gene_model")
 
 
-def test_load_gene_model_delegates_to_repository(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    model = GeneModel()
-    records = ["chr1\tsrc\tgene\t1\t10\t.\t+\t.\tID=GENE1;Name=GENE1"]
-    calls: dict[str, object] = {}
+def test_parser_boundary_populates_mrna_parent_lookup() -> None:
+    from SpliceGrapher.formats.parsers import load_gene_model_records
 
-    def _fake_repo_load(
-        model_arg: GeneModel,
-        gff_records_arg: gm.GffRecordSource,
-        *,
-        require_notes: bool,
-        chromosomes: Sequence[str] | str | None,
-        verbose: bool,
-        ignore_errors: bool,
-    ) -> None:
-        calls["model"] = model_arg
-        calls["records"] = gff_records_arg
-        calls["kwargs"] = {
-            "require_notes": require_notes,
-            "chromosomes": chromosomes,
-            "verbose": verbose,
-            "ignore_errors": ignore_errors,
-        }
-
-    monkeypatch.setattr(gm.GeneModelRepository, "load", _fake_repo_load)
-
-    model.load_gene_model(records, verbose=True)
-
-    assert calls["model"] is model
-    assert calls["records"] == records
-    assert calls["kwargs"] == {
-        "require_notes": False,
-        "chromosomes": None,
-        "verbose": True,
-        "ignore_errors": False,
-    }
-
-
-def test_load_gene_model_populates_mrna_parent_lookup() -> None:
     model = GeneModel()
     records = [
         "chr1\tsrc\tgene\t1\t100\t.\t+\t.\tID=GENE1;Name=GENE1",
         "chr1\tsrc\tmRNA\t1\t100\t.\t+\t.\tID=TX1;Parent=GENE1",
     ]
 
-    model.load_gene_model(records)
+    load_gene_model_records(model, records)
 
     parent = model.get_mrna_parent("chr1", "tx1")
     assert parent is not None
@@ -617,6 +558,8 @@ def test_write_gff_delegates_to_writer_boundary(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     import io
+
+    import SpliceGrapher.formats.gene_model.model as gene_model_model
 
     model = GeneModel()
     out_stream = io.StringIO()
@@ -636,7 +579,7 @@ def test_write_gff_delegates_to_writer_boundary(
         calls["gene_set"] = gene_set
         calls["verbose"] = verbose
 
-    monkeypatch.setattr(gm, "write_gene_model_gff", _fake_write_gff)
+    monkeypatch.setattr(gene_model_model, "write_gene_model_gff", _fake_write_gff)
 
     model.write_gff(out_stream, verbose=True)
 
@@ -651,6 +594,8 @@ def test_write_gtf_delegates_to_writer_boundary(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     import io
+
+    import SpliceGrapher.formats.gene_model.model as gene_model_model
 
     model = GeneModel()
     out_stream = io.StringIO()
@@ -668,7 +613,7 @@ def test_write_gtf_delegates_to_writer_boundary(
         calls["gene_filter"] = gene_filter
         calls["verbose"] = verbose
 
-    monkeypatch.setattr(gm, "write_gene_model_gtf", _fake_write_gtf)
+    monkeypatch.setattr(gene_model_model, "write_gene_model_gtf", _fake_write_gtf)
 
     model.write_gtf(out_stream, verbose=True)
 
@@ -722,14 +667,16 @@ def test_get_parent_uses_strict_lookup_without_delimiter_guessing() -> None:
     assert model.get_parent("GENE1.1", "chr1") is None
 
 
-def test_load_gene_model_resolves_delimited_parent_ids_in_parser_layer() -> None:
+def test_parser_boundary_resolves_delimited_parent_ids_in_parser_layer() -> None:
+    from SpliceGrapher.formats.parsers import load_gene_model_records
+
     model = GeneModel()
     records = [
         "chr1\tsrc\tgene\t1\t100\t.\t+\t.\tID=GENE1;Name=GENE1",
         "chr1\tsrc\texon\t10\t20\t.\t+\t.\tParent=GENE1.1;transcript_id=TX1",
     ]
 
-    model.load_gene_model(records)
+    load_gene_model_records(model, records)
 
     gene = model.get_gene("chr1", "GENE1")
     assert gene is not None

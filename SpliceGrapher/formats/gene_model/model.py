@@ -10,8 +10,9 @@ from urllib.parse import unquote
 
 from SpliceGrapher.core.enums import RecordType
 from SpliceGrapher.formats import models as _models
-
-from .repository import GeneModelRepository
+from SpliceGrapher.formats.parsers.gene_model_gff import load_gene_model_records
+from SpliceGrapher.formats.writers.gene_model import write_gff as write_gene_model_gff
+from SpliceGrapher.formats.writers.gene_model import write_gtf as write_gene_model_gtf
 
 GeneFilter = _models.GeneFilter
 GffRecordSource = _models.GffRecordSource
@@ -58,7 +59,8 @@ class GeneModel:
             verbose=verbose,
             ignore_errors=ignore_errors,
         )
-        model.load_gene_model(
+        load_gene_model_records(
+            model,
             gff_records,
             require_notes=require_notes,
             chromosomes=chromosomes,
@@ -352,36 +354,6 @@ class GeneModel:
             result[g.id] = set(g.transcripts.keys())
         return result
 
-    def load_gene_model(
-        self,
-        gff_records: GffRecordSource,
-        *,
-        require_notes: bool = False,
-        chromosomes: Sequence[str] | str | None = None,
-        verbose: bool = False,
-        ignore_errors: bool = False,
-    ) -> None:
-        """
-        Reads a tab-delimited gene annotation GFF file and stores information
-        on chromosomes, the genes within each chromosome and exons within each gene.
-
-        Parameters:
-          'gff_records'  - source of GFF records; may be a file path, a file stream
-                           or a list/set of strings
-          'require_notes' - require annotations for all gene records (default=False)
-          'chromosomes'  - chromosome name or list of chromosomes to store (default=all)
-          'verbose'      - provide verbose feedback (default=False)
-          'ignore_errors' - ignore error conditions (default=False)
-        """
-        GeneModelRepository.load(
-            self,
-            gff_records,
-            require_notes=require_notes,
-            chromosomes=chromosomes,
-            verbose=verbose,
-            ignore_errors=ignore_errors,
-        )
-
     def make_sorted_model(self) -> None:
         self.chromosome_index = {
             chrom: ChromosomeGeneIndex.build(self.model[chrom].values()) for chrom in self.model
@@ -396,7 +368,7 @@ class GeneModel:
         verbose: bool = False,
     ) -> None:
         """Writes a complete gene model out to a GFF file."""
-        GeneModelRepository.write_gff(
+        write_gene_model_gff(
             self,
             gff_path,
             gene_filter=gene_filter,
@@ -412,7 +384,7 @@ class GeneModel:
         verbose: bool = False,
     ) -> None:
         """Writes a complete gene model out to a GTF file."""
-        GeneModelRepository.write_gtf(
+        write_gene_model_gtf(
             self,
             gtf_path,
             gene_filter=gene_filter,
