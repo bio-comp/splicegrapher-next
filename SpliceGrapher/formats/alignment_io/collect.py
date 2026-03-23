@@ -2,17 +2,13 @@
 
 from __future__ import annotations
 
-import os
 import sys
-from collections.abc import Mapping
-from os import PathLike
 from typing import Literal, overload
 
 import numpy
 import pysam
 
-from SpliceGrapher.formats.depth_io import DepthSource, is_depths_file, read_depths
-from SpliceGrapher.formats.junction import SpliceJunction, parse_junction_record
+from SpliceGrapher.formats.junction import SpliceJunction
 
 from .sources import AlignmentStreamer, _make_chromosome_set
 from .types import (
@@ -24,7 +20,6 @@ from .types import (
     DepthMap,
     JunctionKey,
     JunctionMap,
-    ReadDataSource,
     ReferencePath,
 )
 
@@ -123,93 +118,6 @@ def _ensure_depth_capacity(depth_array: numpy.ndarray, required_size: int) -> nu
     expanded = numpy.zeros(new_size, dtype=depth_array.dtype)
     expanded[: depth_array.size] = depth_array
     return expanded
-
-
-def _depth_map_to_arrays(depths: Mapping[str, list[int] | numpy.ndarray]) -> DepthMap:
-    """Normalize depth maps to int32 NumPy arrays."""
-    return {
-        chrom: numpy.asarray(chrom_depths, dtype=numpy.int32)
-        for chrom, chrom_depths in depths.items()
-    }
-
-
-def _is_depths_source(source: ReadDataSource) -> bool:
-    """Return ``True`` when ``source`` should be handled as a depths file."""
-    if not isinstance(source, (str, PathLike)):
-        return False
-
-    source_path = os.fspath(source)
-    lower = source_path.lower()
-    if lower.endswith((".sam", ".bam", ".cram")):
-        return False
-
-    if os.path.isfile(source_path):
-        try:
-            with open(source_path, "rb") as stream:
-                magic = stream.read(4)
-        except OSError:
-            magic = b""
-        if magic in {b"BAM\x01", b"CRAM"}:
-            return False
-
-    return is_depths_file(source_path)
-
-
-@overload
-def _collect_depths_source_data(
-    source: DepthSource,
-    *,
-    alignments: Literal[True],
-    include_depths: bool = True,
-    junctions: bool,
-    maxpos: int,
-    minanchor: int,
-    minjct: int,
-    verbose: bool,
-) -> CollectResultWithAlignments: ...
-
-
-@overload
-def _collect_depths_source_data(
-    source: DepthSource,
-    *,
-    alignments: Literal[False] = False,
-    include_depths: bool = True,
-    junctions: bool,
-    maxpos: int,
-    minanchor: int,
-    minjct: int,
-    verbose: bool,
-) -> CollectResult: ...
-
-
-def _collect_depths_source_data(
-    source: DepthSource,
-    *,
-    alignments: bool = False,
-    include_depths: bool = True,
-    junctions: bool,
-    maxpos: int,
-    minanchor: int,
-    minjct: int,
-    verbose: bool,
-) -> CollectResult | CollectResultWithAlignments:
-    """Bridge legacy depths-file inputs into the public alignment I/O contract."""
-    depth_map, jcts = read_depths(
-        source,
-        parse_junction=parse_junction_record,
-        maxpos=maxpos,
-        minanchor=minanchor,
-        minjct=minjct,
-        depths=include_depths,
-        junctions=junctions,
-        verbose=verbose,
-    )
-    normalized_depths = _depth_map_to_arrays(depth_map)
-    if alignments:
-        empty_alignments: AlignmentMap = {}
-        return normalized_depths, jcts, empty_alignments
-    return normalized_depths, jcts
 
 
 @overload
@@ -362,9 +270,6 @@ def _collect_pysam_data(
 
 
 __all__ = [
-    "_collect_depths_source_data",
     "_collect_pysam_data",
-    "_depth_map_to_arrays",
-    "_is_depths_source",
     "_record_strand",
 ]

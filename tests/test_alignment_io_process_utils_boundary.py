@@ -72,9 +72,9 @@ def test_get_sam_read_data_depths_fallback_preserves_three_tuple_when_alignments
     fake_depths = {"chr1": [0, 1, 2]}
     fake_junctions: dict[str, list[object]] = {"chr1": []}
 
-    monkeypatch.setattr(alignment_collect, "_is_depths_source", lambda source: True)
+    monkeypatch.setattr(alignment_api, "_is_depths_source", lambda source: True)
     monkeypatch.setattr(
-        alignment_collect,
+        alignment_api,
         "read_depths",
         lambda *args, **kwargs: (fake_depths, fake_junctions),
     )

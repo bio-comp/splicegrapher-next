@@ -16,6 +16,10 @@ def test_alignment_io_package_reexports_public_api_and_internal_layout() -> None
     assert hasattr(alignment_collect, "_collect_pysam_data")
     assert hasattr(alignment_sources, "_open_alignment_file")
     assert hasattr(alignment_types, "AlignmentSource")
+    assert not hasattr(alignment_collect, "_is_depths_source")
+    assert not hasattr(alignment_collect, "_collect_depths_source_data")
+    assert hasattr(alignment_api, "_is_depths_source")
+    assert hasattr(alignment_api, "_collect_depths_source_data")
 
 
 def test_alignment_io_uses_direct_header_enums_without_proxy_exports() -> None:
