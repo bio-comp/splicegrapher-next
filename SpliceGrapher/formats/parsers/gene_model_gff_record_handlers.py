@@ -32,6 +32,63 @@ from SpliceGrapher.formats.parsers.gene_model_gff_resolution import (
 RecordHandler: TypeAlias = Callable[[ParseContext, ParsedRecord], None]
 
 
+def _parent_gene_for_transcript(
+    ctx: ParseContext,
+    *,
+    chrom: str,
+    transcript: model_domain.Transcript,
+    fail_message: str,
+) -> model_domain.Gene | None:
+    parent_gene = ctx.model.get_mrna_parent(chrom, transcript.id)
+    if parent_gene is None:
+        ctx.fail(fail_message)
+        return None
+    return parent_gene
+
+
+def _register_transcript_links(
+    ctx: ParseContext,
+    *,
+    transcript: model_domain.Transcript,
+    parent_gene: model_domain.Gene,
+    chrom: str,
+) -> None:
+    ctx.model.mrna_forms.setdefault(chrom, {})[transcript.id] = transcript
+    ctx.model.mrna_gene.setdefault(chrom, {})[transcript.id] = parent_gene
+    drain_pending_children(
+        ctx,
+        transcript=transcript,
+        parent_gene=parent_gene,
+        chrom=chrom,
+    )
+
+
+def _resolve_region_target(
+    ctx: ParseContext,
+    record: ParsedRecord,
+    parent_id: str,
+) -> tuple[model_domain.Transcript, model_domain.Gene] | None:
+    mrna_record = resolve_parent(ctx, parent_id, record.chrom, search_genes=False)
+    if mrna_record is None:
+        ctx.write_verbose(f"line {record.line_no}: no Mrna {parent_id} found for {record.rec_type}")
+        queue_pending_child(ctx.pending_regions, record, parent_id)
+        return None
+    if not isinstance(mrna_record, model_domain.Transcript):
+        ctx.fail(f"line {record.line_no}: parent {parent_id} is not an Mrna record")
+        return None
+    parent_gene = _parent_gene_for_transcript(
+        ctx,
+        chrom=record.chrom,
+        transcript=mrna_record,
+        fail_message=(
+            f"line {record.line_no}: Mrna {mrna_record.id} is missing a parent gene for CDS record"
+        ),
+    )
+    if parent_gene is None:
+        return None
+    return mrna_record, parent_gene
+
+
 def handle_gene_record(ctx: ParseContext, record: ParsedRecord) -> None:
     gid = annotation_value(record.annots, model_domain.ID_FIELD)
     if gid is None:
@@ -101,11 +158,15 @@ def handle_exon_record(ctx: ParseContext, record: ParsedRecord) -> None:
         return
     existing_transcript = resolve_parent(ctx, parent_id, record.chrom, search_genes=False)
     if isinstance(existing_transcript, model_domain.Transcript):
-        parent_gene = ctx.model.get_mrna_parent(record.chrom, existing_transcript.id)
-        if parent_gene is None:
-            ctx.fail(
+        parent_gene = _parent_gene_for_transcript(
+            ctx,
+            chrom=record.chrom,
+            transcript=existing_transcript,
+            fail_message=(
                 f"line {record.line_no}: transcript {existing_transcript.id} is missing parent gene"
-            )
+            ),
+        )
+        if parent_gene is None:
             return
         strand = resolve_strand(
             ctx,
@@ -158,13 +219,11 @@ def handle_exon_record(ctx: ParseContext, record: ParsedRecord) -> None:
         ctx.stats.iso_count += 1
     transcript = gene_obj.transcripts.get(isoform.id)
     if isinstance(transcript, model_domain.Transcript):
-        ctx.model.mrna_forms.setdefault(record.chrom, {})[transcript.id] = transcript
-        ctx.model.mrna_gene.setdefault(record.chrom, {})[transcript.id] = gene_obj
-        drain_pending_children(
+        _register_transcript_links(
             ctx,
             transcript=transcript,
-            parent_gene=gene_obj,
             chrom=record.chrom,
+            parent_gene=gene_obj,
         )
 
 
@@ -231,9 +290,7 @@ def handle_mrna_record(ctx: ParseContext, record: ParsedRecord) -> None:
         attr=mrna_attr,
     )
     mrna_gene.add_transcript(mrna)
-    ctx.model.mrna_forms.setdefault(record.chrom, {})[transcript_id] = mrna
-    ctx.model.mrna_gene.setdefault(record.chrom, {})[transcript_id] = mrna_gene
-    drain_pending_children(
+    _register_transcript_links(
         ctx,
         transcript=mrna,
         parent_gene=mrna_gene,
@@ -257,20 +314,10 @@ def handle_transcript_region_record(ctx: ParseContext, record: ParsedRecord) -> 
     parent_id = parent_annotation(record)
     if parent_id is None:
         return
-    mrna_record = resolve_parent(ctx, parent_id, record.chrom, search_genes=False)
-    if mrna_record is None:
-        ctx.write_verbose(f"line {record.line_no}: no Mrna {parent_id} found for {record.rec_type}")
-        queue_pending_child(ctx.pending_regions, record, parent_id)
+    target = _resolve_region_target(ctx, record, parent_id)
+    if target is None:
         return
-    if not isinstance(mrna_record, model_domain.Transcript):
-        ctx.fail(f"line {record.line_no}: parent {parent_id} is not an Mrna record")
-        return
-    parent_gene = ctx.model.get_mrna_parent(record.chrom, mrna_record.id)
-    if parent_gene is None:
-        ctx.fail(
-            f"line {record.line_no}: Mrna {mrna_record.id} is missing a parent gene for CDS record"
-        )
-        return
+    mrna_record, parent_gene = target
 
     strand = resolve_strand(
         ctx,
