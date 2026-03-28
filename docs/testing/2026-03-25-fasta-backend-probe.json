@@ -1,0 +1,72 @@
+{
+  "config": {
+    "iterations": 5,
+    "random_access_queries": 600,
+    "records": 4000,
+    "seq_len": 300
+  },
+  "contracts": {
+    "pyfastx_supports_file_handles": false,
+    "sg_supports_file_handles": true
+  },
+  "index_probe": {
+    "pyfaidx": {
+      "elapsed_seconds": 0.008571499958634377,
+      "index_bytes": 108585,
+      "index_files": [
+        "probe.fa.fai"
+      ]
+    },
+    "pyfastx": {
+      "elapsed_seconds": 0.0038648329209536314,
+      "index_bytes": 339968,
+      "index_files": [
+        "probe.fa.fxi"
+      ]
+    }
+  },
+  "parity": {
+    "pyfaidx_matches_sg": true,
+    "pyfastx_matches_sg": true
+  },
+  "pyfaidx": {
+    "iterate": {
+      "max_seconds": 0.01136558293364942,
+      "mean_seconds": 0.011119624972343445,
+      "peak_mebibytes": 79.84375
+    },
+    "random_access": {
+      "max_seconds": 0.010979540878906846,
+      "mean_seconds": 0.009665608126670121,
+      "peak_mebibytes": 79.84375
+    },
+    "records": 4000
+  },
+  "pyfastx": {
+    "iterate": {
+      "max_seconds": 0.005722875008359551,
+      "mean_seconds": 0.004264758341014386,
+      "peak_mebibytes": 80.0
+    },
+    "random_access": {
+      "max_seconds": 0.0045006670989096165,
+      "mean_seconds": 0.003263616794720292,
+      "peak_mebibytes": 80.0
+    },
+    "records": 4000
+  },
+  "recommendation": "reject_default_keep_pyfaidx",
+  "sg": {
+    "iterate": {
+      "max_seconds": 0.014923167182132602,
+      "mean_seconds": 0.011836550012230874,
+      "peak_mebibytes": 50.125
+    },
+    "random_access": {
+      "max_seconds": 5.701270582852885,
+      "mean_seconds": 5.335901224985719,
+      "peak_mebibytes": 79.84375
+    },
+    "records": 4000
+  }
+}
